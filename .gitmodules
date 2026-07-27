@@ -1,0 +1,3 @@
+[submodule "cocos-mcp-server"]
+	path = cocos-mcp-server
+	url = https://github.com/mickorz/cocos-mcp-server.git
