@@ -68,6 +68,19 @@ flowchart LR
 - **扩展加载**：`cocos-mcp-server` 需构建后在 Cocos Creator 扩展管理器中加载（入口 `dist/main.js`），接入步骤参考 `cocos-mcp-server/README.md`。
 - **忽略规则分层**：根目录 `.gitignore` 负责根级别（OS / IDE / 日志）；`CocosMCP/.gitignore`（Cocos 标准模板）忽略 `library/ temp/ build/ profiles/ local/ node_modules/`。提交前确认未把 `library/`、`temp/` 等大目录带入。
 
+## 扩展接入约定
+
+`cocos-mcp-server` 源码在仓库根（git 跟踪），接入 Cocos 项目的方式按场景区分：
+
+- **本仓库项目（CocosMCP）**：用目录 junction 接入 `CocosMCP/extensions/cocos-mcp-server` -> 仓库根 `cocos-mcp-server`。单一来源，改源码或重新 build 后 Cocos 刷新扩展即生效，无需复制。`CocosMCP/extensions/` 已在根 `.gitignore` 排除，不重复跟踪。
+- **外部项目（不在本仓库）**：可直接把整个 `cocos-mcp-server` 目录复制到目标项目的 `extensions/`，代价是改源码后要重新复制 + build。
+
+建 junction（PowerShell）：
+```powershell
+New-Item -ItemType Directory -Force "<项目路径>/extensions"
+New-Item -ItemType Junction -Path "<项目路径>/extensions/cocos-mcp-server" -Target "E:\CocosProjects\CocosMCP\cocos-mcp-server"
+```
+
 ## 文档同步到 Obsidian
 
 本项目所有 Markdown 文档（`.md`）的**新增 / 修改 / 删除**会自动镜像到 Obsidian 知识库：

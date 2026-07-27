@@ -888,7 +888,348 @@ flowchart TD
 
 ---
 
-## 十五、参考引用
+## 十五、补充架构维度(深入)
+
+### 15.1 安全性架构
+
+HTTP 服务器在接入层做了三层基础防护:
+
+```mermaid
+flowchart TD
+    A[HTTP 请求进入] --> B[绑定 127 0 0 1 仅本地监听]
+    B --> C[设置 CORS 头]
+    C --> D[Access-Control-Allow-Origin 星号]
+    C --> E[Allow-Methods GET POST OPTIONS]
+    C --> F[Allow-Headers Content-Type Authorization]
+    A --> G{method 为 OPTIONS}
+    G -->|是| H[直接 200 预检通过]
+    G -->|否| I[路由分发]
+    I --> J[maxConnections 限制并发]
+```
+
+| 防护点 | 实现 | 局限 |
+|------|------|------|
+| 网络隔离 | `httpServer.listen(port, '127.0.0.1', ...)` 仅监听本地回环 | 不对外网暴露,但本机任何进程可访问 |
+| CORS | `Access-Control-Allow-Origin: *` 全允许 | 牺牲严格性换 AI 客户端跨域便利 |
+| 连接数 | `maxConnections` 配置项(默认 10) | 仅配置层声明,HTTP 层未强制限流 |
+| 预检 | OPTIONS 请求直接返回 200 | 标准 CORS 预检 |
+| 端口冲突 | `EADDRINUSE` 错误捕获并提示换端口 | 不自动重试或递增端口 |
+
+> 注意:`allowedOrigins` 配置项存在但代码中未实际校验来源,CORS 头固定为 `*`。生产环境若需更严格来源校验需自行增强。
+
+### 15.2 异步时序与超时控制架构
+
+跨进程消息是异步的,工具类用 `setTimeout` 等待 Editor 完成底层操作,这是 Cocos 扩展的时序约束:
+
+```mermaid
+flowchart LR
+    A[调 Editor Message] --> B[Editor 跨进程处理]
+    B --> C[场景进程执行]
+    C --> D[await setTimeout 等待]
+    D --> E[重查验证结果]
+```
+
+**等待时长分级**(grep 统计):
+
+| 等待时长 | 场景 | 文件示例 |
+|------|------|------|
+| 100ms | 组件添加后验证、节点创建后设父级 | component-tools.ts:345, node-tools.ts:617 |
+| 150ms | 节点创建后设初始变换 | node-tools.ts:655 |
+| 200ms | 组件属性更新、预制体重命名 | component-tools.ts:1339, prefab-tools.ts:1752 |
+| 300ms | 复杂组件属性设置 | component-tools.ts:2449 |
+| 500ms | 文件系统同步、预制体保存 | prefab-tools.ts:723,3501 |
+| 800ms | 预制体深度操作 | prefab-tools.ts:3474 |
+| 1000ms | 预制体编辑模式退出 | prefab-tools.ts:3628,3776 |
+
+**超时控制**(server-tools.ts:157):
+
+```mermaid
+flowchart TD
+    A[Promise race 竞速] --> B[fetch 测试连接]
+    A --> C[setTimeout reject 超时]
+    B --> D{先完成}
+    C --> D
+    D -->|fetch 赢| E[返回响应时间]
+    D -->|超时赢| F[抛 Connection timeout]
+```
+
+> 这是经验值时序:不同操作(组件/节点/预制体/文件系统)所需缓冲不同,代码按操作复杂度分级等待。无统一调度器,每个工具方法独立硬编码等待时长。
+
+### 15.3 资源路径协议架构
+
+Cocos Creator 用 `db://` 协议标识资源,工具类在路径与 UUID 间自动转换:
+
+```mermaid
+flowchart LR
+    A[AI 入参] --> B{assetPath 还是 assetUuid}
+    B -->|assetPath| C[asset db query asset info]
+    C --> D[解析为 UUID]
+    B -->|assetUuid| E[直接用]
+    D --> F[传给 scene create node]
+    E --> F
+    G[db://assets/...] --> H[用户资源]
+    I[db://internal/...] --> J[内置资源]
+    K[db://assets/**/*] --> L[glob 查询模式]
+```
+
+| 协议前缀 | 含义 | 用途 |
+|------|------|------|
+| `db://assets/` | 用户项目资源根 | 所有用户资源都在此下 |
+| `db://internal/` | 引擎内置资源 | 内置纹理、材质、shader |
+| `db://assets/**/*` | glob 递归查询 | asset_query 批量查资源 |
+
+**路径与文件系统互转**(prefab-tools.ts:336):
+```
+prefabPath.replace('db://assets/', 'assets/').replace('db://assets', 'assets')
+```
+把 Cocos 资源 URL 转为相对文件系统路径,用于直接读 .prefab 文件做校验。
+
+> 这是路径双轨制:Editor.Message 用 `db://` 协议,Node fs 用相对路径,工具类在两者间转换。
+
+### 15.4 AI 提示词工程架构
+
+工具的 `description` 不是简单说明,而是**结构化提示词**,用强调词引导 AI 按正确工作流调用:
+
+```mermaid
+flowchart TD
+    A[工具 description] --> B[工具用途大写前缀]
+    A --> C[CRITICAL WORKFLOW 关键流程]
+    A --> D[REQUIRED 必填参数]
+    A --> E[IMPORTANT 重要提示]
+    A --> F[WARNING 警告不可逆]
+    A --> G[示例 Examples]
+    A --> H[UUID 格式说明]
+    B --> I[如 NODE SEARCH 标题]
+    C --> J[如 先 node query 找 UUID 再操作]
+    D --> K[如 REQUIRED for create action]
+    G --> L[如 db://assets/prefabs/Player.prefab]
+```
+
+**强调词统计**(grep 82 处):
+
+| 强调词 | 出现次数 | 作用 |
+|------|------|------|
+| REQUIRED | 约 40 | 标注必填参数,避免 AI 漏传 |
+| WORKFLOW | 约 15 | 描述正确调用顺序 |
+| CRITICAL | 约 8 | 标注不可跳过的步骤 |
+| IMPORTANT | 约 12 | 补充关键提醒 |
+| WARNING | 约 7 | 标注不可逆/危险操作 |
+
+**工作流引导示例**(node-tools.ts:14):
+```
+NODE SEARCH & INFORMATION: Essential tool for finding and inspecting scene nodes.
+CRITICAL WORKFLOW: Always use this FIRST to get node UUIDs before any modifications.
+```
+
+**错误信息引导**(component-tools.ts:411):
+```
+Component cid '...' not found on node. 请用 getComponents 获取 type 字段(cid)作为 componentType。
+```
+
+> 这是 v1.5.4 降低 AI 调用失败率的核心:把"使用指南"写进 description,让 AI 一次读到正确顺序,而非试错。配合 ToolResponse.instruction 形成"调用前引导 + 调用后建议"双重提示。
+
+### 15.5 编译与构建架构
+
+TypeScript 编译配置的继承与约束:
+
+```mermaid
+flowchart TD
+    A[base tsconfig json] --> B[继承给 tsconfig json]
+    A --> C[target ES2017]
+    A --> D[module CommonJS]
+    A --> E[strict 严格模式]
+    A --> F[inlineSourceMap 加 inlineSources 调试到源码]
+    A --> G[experimentalDecorators 装饰器]
+    A --> H[esModuleInterop 互操作]
+    A --> I[skipLibCheck 跳过库检查]
+    A --> J[resolveJsonModule 可 import json]
+    A --> K[types 限定 node 与 creator types editor]
+    A --> L[rootDir source outDir dist]
+    B --> M[tsc 编译]
+    M --> N[dist 产物]
+```
+
+| 配置项 | 值 | 架构意义 |
+|------|------|------|
+| `target` | ES2017 | Cocos 编辑器内置 Node 支持的语法级别 |
+| `module` | CommonJS | 编辑器 require 机制兼容 |
+| `strict` | true | 全量类型检查,catch 编译期错误 |
+| `inlineSourceMap` + `inlineSources` | true | 产物含源码映射,可调试到 .ts |
+| `experimentalDecorators` | true | 工具类可能用装饰器 |
+| `types` | node + @cocos/creator-types/editor | 限定类型来源,Editor 全局类型可用 |
+
+### 15.6 preinstall 版本校验架构
+
+`npm install` 前的联网校验,容错设计:
+
+```mermaid
+flowchart TD
+    A[npm install 触发 preinstall] --> B[读 package json 取 creator types 版本]
+    B --> C[npm view 查 npm 仓库版本列表]
+    C --> D{npm 可用}
+    D -->|否| E[跳过检查 返回 true]
+    D -->|是| F{版本在列表中}
+    F -->|是| G[通过 安装继续]
+    F -->|否| H[黄字警告 不阻断]
+    H --> I[提示用开发者菜单导出接口定义]
+    C --> J{网络失败}
+    J -->|是| E
+```
+
+> 设计哲学:**校验失败不阻断安装**。npm 不可用、网络失败、版本未发布都只 warn,让安装继续。因为 @cocos/creator-types 可能比编辑器版本滞后,未发布时引导用户从"开发者->导出接口定义"手动生成。
+
+### 15.7 场景脚本加载机制
+
+`scene.ts` 第一行的关键技巧:
+
+```typescript
+import { join } from 'path';
+module.paths.push(join(Editor.App.path, 'node_modules'));
+```
+
+```mermaid
+flowchart LR
+    A[scene ts 在场景进程加载] --> B[默认 module paths 找不到 cc 模块]
+    B --> C[手动 push Editor App 的 node modules 路径]
+    C --> D[require cc 能找到引擎运行时]
+    D --> E[调 director Node Scene 等运行时 API]
+```
+
+> 场景进程的模块查找路径默认不含编辑器的 node_modules,这行手动补路径,让 `require('cc')` 能解析到引擎运行时。是场景脚本能调运行时 API 的前提。
+
+### 15.8 i18n 双层架构
+
+系统存在两套并存的 i18n 机制,作用域不同:
+
+```mermaid
+flowchart TD
+    A[i18n 架构] --> B[外层 i18n 目录]
+    A --> C[面板内置 translations 字典]
+    B --> B1[zh js en js]
+    B1 --> B2[菜单与基础文案]
+    B1 --> B3[Editor 按编辑器语言自动加载]
+    B1 --> B4[如 extension name panel title open panel]
+    C --> C1[面板组件内 translations 对象]
+    C1 --> C2[面板 UI 文案]
+    C1 --> C3[运行时按 currentLanguage 切换]
+    C1 --> C4[如品牌区 标签页 操作按钮]
+```
+
+| 层级 | 位置 | 作用域 | 切换方式 |
+|------|------|------|------|
+| 外层 | `i18n/zh.js` `i18n/en.js` | 菜单、扩展描述、面板标题 | Editor 按编辑器语言自动加载 |
+| 内层 | `panels/default/index.ts` 的 `translations` | 面板内组件文案 | 面板内 `currentLanguage` 运行时切换 |
+
+> 两套并存因为作用域不同:外层由 Editor 框架管理(静态),内层由面板运行时管理(动态,可即时切换语言不改扩展)。
+
+### 15.9 场景快照与撤销架构
+
+`scene_state_management` 工具对接 Cocos 编辑器的操作记录系统:
+
+```mermaid
+flowchart TD
+    A[scene scene state management] --> B{action}
+    B -->|create snapshot| C[scene snapshot 创建快照]
+    B -->|abort snapshot| D[scene snapshot abort 中止快照]
+    B -->|begin undo| E[scene begin recording 开始记录]
+    E --> F[返回 undoId]
+    B -->|end undo| G[scene end recording 结束记录]
+    G --> H[操作入撤销栈]
+    B -->|cancel undo| I[scene cancel recording 取消记录]
+    B -->|soft reload| J[scene soft reload 软重载]
+```
+
+```mermaid
+flowchart LR
+    A[begin undo 拿 undoId] --> B[执行一系列节点操作]
+    B --> C[end undo 提交]
+    C --> D[操作可 Ctrl Z 撤销]
+    A --> E[若中途出错]
+    E --> F[cancel undo 回滚]
+    F --> G[操作不留痕]
+```
+
+> 这让 AI 的批量操作可被用户撤销,而非不可逆。`begin_undo` 返回的 undoId 是事务标识,`end_undo` 后操作才入撤销栈。
+
+### 15.10 跨版本兼容架构
+
+多层回退的根本原因是 Cocos Creator 不同版本的 API 差异:
+
+```mermaid
+flowchart TD
+    A[同一操作多种 API] --> B[3.8.6 版本 API A]
+    A --> C[3.9 版本 API B]
+    A --> D[4.x 版本 API C]
+    A --> E[未来版本未知 API]
+    B --> F[remove array element]
+    C --> G[delete component]
+    D --> H[remove component by index]
+    E --> I[remove component by type]
+    F --> J[逐一尝试]
+    G --> J
+    H --> J
+    I --> J
+    J --> K[任一成功即返回]
+```
+
+**removeComponent 四级级联的根本原因**(component-tools.ts:420-468):
+
+| 方法 | API | 适用版本推测 |
+|------|------|------|
+| 方法1 | `scene/remove-array-element` path=`__comps__` | 通用,按索引删数组元素 |
+| 方法2 | `scene/delete-component` | 较新版本的组件删除 API |
+| 方法3 | `scene/remove-component` component=索引 | 旧版按索引删 |
+| 方法4 | `scene/remove-component` component=类型名 | 最旧版按类型删 |
+
+> 这种"全量尝试"策略以代码冗长换取跨版本兼容,是开源版适配多版本 Cocos 的核心手段。PRO 版可能用操作码方法屏蔽了这种差异。
+
+### 15.11 静态资源架构
+
+面板模板与样式不在 JS 中内嵌,而是独立静态文件:
+
+```mermaid
+flowchart LR
+    A[static 目录] --> B[icon png 图标]
+    A --> C[style 面板 CSS]
+    A --> D[template 面板 HTML]
+    D --> E[panels default index ts]
+    C --> E
+    E --> F[readFileSync 读文件]
+    F --> G[Editor Panel define 的 template 与 style]
+    G --> H[面板渲染]
+```
+
+> 这种分离让 UI 改 HTML/CSS 不必重新编译 TS,便于迭代。代价是运行时依赖文件系统读取。
+
+### 15.12 调试与可观测架构
+
+```mermaid
+flowchart TD
+    A[可观测性] --> B[console log 普通日志]
+    A --> C[console warn 警告]
+    A --> D[console error 错误]
+    A --> E[enableDebugLog 开关]
+    A --> F[详细错误信息]
+    B --> G[如 MCPServer Tools initialized]
+    C --> H[如 Failed to get scene root]
+    D --> I[如 Port already in use]
+    F --> J[含所有方法错误信息拼接]
+    F --> K[含参数 JSON 便于复现]
+```
+
+| 日志来源 | 内容 |
+|------|------|
+| `[MCPServer]` 前缀 | 服务器生命周期(启动/停止/工具初始化) |
+| `[ToolManager]` 前缀 | 工具管理器(初始化/配置操作) |
+| `[MCP Panel]` 前缀 | 面板(显示/隐藏) |
+| `[Main]` 前缀 | 主进程方法调用 |
+| 无前缀 console.log | 工具方法内部细节(如"Creating node with options") |
+
+> 错误信息设计偏调试友好:含参数 JSON、所有回退方法的错误拼接,便于定位。但生产环境可能泄露参数细节(如节点 UUID),需留意。
+
+---
+
+## 十六、参考引用
 
 ### 15.1 源码文件索引
 

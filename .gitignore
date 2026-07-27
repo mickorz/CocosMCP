@@ -22,6 +22,12 @@ $RECYCLE.BIN/
 .claude/settings.local.json
 
 #///////////////////////////
+# Cocos 项目扩展目录
+# cocos-mcp-server 通过 junction 引用仓库根那份，此处不重复跟踪
+#///////////////////////////
+CocosMCP/extensions/
+
+#///////////////////////////
 # Node / 日志
 #///////////////////////////
 node_modules/
