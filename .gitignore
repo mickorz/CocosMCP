@@ -1,0 +1,31 @@
+
+#///////////////////////////
+# 操作系统生成文件
+#///////////////////////////
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+#///////////////////////////
+# IDE / 编辑器
+#///////////////////////////
+.vscode/
+.idea/
+*.swp
+*.swo
+
+#///////////////////////////
+# Node / 日志
+#///////////////////////////
+node_modules/
+*.log
+npm-debug.log*
+
+#///////////////////////////
+# 说明：Cocos Creator 项目内部忽略项
+# library temp build profiles 等已由
+# CocosMCP/CocosMCP/.gitignore 覆盖
+# 此处仅作仓库根级别补充
+#///////////////////////////
