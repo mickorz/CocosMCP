@@ -17,6 +17,11 @@ $RECYCLE.BIN/
 *.swo
 
 #///////////////////////////
+# Claude Code 本地配置（含个人 Obsidian 路径，不进 git）
+#///////////////////////////
+.claude/settings.local.json
+
+#///////////////////////////
 # Node / 日志
 #///////////////////////////
 node_modules/
