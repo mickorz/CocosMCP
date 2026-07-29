@@ -21,6 +21,11 @@ export class ProjectTools implements ToolExecutor {
                             description: 'Preview platform (run action). "browser" = web preview (most common), "simulator" = device simulation, "preview" = editor preview. Recommended: browser for quick testing.',
                             default: 'browser'
                         },
+                        // For run + browser action: 指定要预览的场景
+                        scene: {
+                            type: 'string',
+                            description: '(run + browser 可选) 要预览的场景，Cocos 资源 URL。推荐格式: db://assets/scenes/sss.scene。也兼容 assets 相对路径(如 scenes/sss.scene 或 scenes/sss，会自动补全为 db://assets/...)。省略则预览当前编辑器打开的场景。'
+                        },
                         // For build action
                         buildPlatform: {
                             type: 'string',
@@ -78,7 +83,7 @@ export class ProjectTools implements ToolExecutor {
         
         switch (action) {
             case 'run':
-                return await this.runProject(args.platform);
+                return await this.runProject(args.platform, args.scene);
             case 'build':
                 return await this.buildProject({ platform: args.buildPlatform, debug: args.debug });
             case 'get_info':
@@ -109,17 +114,16 @@ export class ProjectTools implements ToolExecutor {
     /**
      * 运行项目预览
      *
-     * 浏览器预览打开流程：
-     *   runProject(platform)
-     *     ├─ platform != browser → 打开构建面板（回退，simulator/preview 仍需手动）
+     * 浏览器预览流程：
+     *   runProject(platform, scene?)
+     *     ├─ platform != browser → 打开构建面板（回退）
      *     └─ platform == browser
-     *          ├─ preview:query-preview-url 取预览地址（失败则回退默认 7456）
-     *          └─ shell.openExternal 打开默认浏览器（失败则回退 child_process 系统命令）
-     *
-     * 说明：Cocos 的 preview 消息模块没有 open 这类触发消息，但编辑器打开项目时
-     *       预览服务会常驻在 7456 端口，因此直接打开该地址即可，无需额外触发。
+     *          ├─ scene 给定 → db:// URL 或 assets 相对路径，asset-db:query-uuid 取场景 uuid
+     *          │    └─ scene:open-scene 切换当前场景(3.7.3 无"不切场景直接预览"消息)
+     *          ├─ preview:query-preview-url 取预览地址(失败回退 7456)
+     *          └─ shell.openExternal 打开浏览器(失败回退 execSync 系统命令)
      */
-    private async runProject(platform: string = 'browser'): Promise<ToolResponse> {
+    private async runProject(platform: string = 'browser', scene?: string): Promise<ToolResponse> {
         try {
             // 非 browser 平台仍走构建面板（浏览器预览仅支持 browser）
             if (platform !== 'browser') {
@@ -134,80 +138,92 @@ export class ProjectTools implements ToolExecutor {
                 };
             }
 
-            const debug: string[] = [];
+            // 1. 解析 scene 参数：Cocos 资源 URL(db://...) 或 assets 相对路径 → 场景 uuid
+            let sceneUuid: string | undefined;
+            if (scene) {
+                let dbUrl: string;
+                if (scene.startsWith('db://')) {
+                    dbUrl = scene;
+                } else {
+                    // assets 相对路径：反斜杠→正斜杠，去前导斜杠与 assets/ 前缀，补 .scene 扩展
+                    let rel = scene.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^assets\//i, '');
+                    if (!/\.[a-z0-9]+$/i.test(rel)) {
+                        rel = rel + '.scene';
+                    }
+                    dbUrl = `db://assets/${rel}`;
+                }
+                try {
+                    const uuid: string | null = await Editor.Message.request('asset-db', 'query-uuid', dbUrl);
+                    if (!uuid) {
+                        return {
+                            success: false,
+                            error: `找不到场景资源: ${dbUrl}。请确认路径相对于 assets 目录且为 .scene 文件。`,
+                            data: { scene, dbUrl }
+                        };
+                    }
+                    sceneUuid = uuid;
+                    console.log(`[ProjectTools] 预览指定场景 ${dbUrl} -> uuid=${uuid}`);
+                } catch (e: any) {
+                    return {
+                        success: false,
+                        error: `查询场景 uuid 失败: ${e && e.message ? e.message : e}`,
+                        data: { scene, dbUrl }
+                    };
+                }
+            }
 
-            // 1. 优先向编辑器查询预览地址，避免硬编码端口
+            // 2. 取预览地址（避免硬编码端口）
             let url = '';
             try {
                 url = await Editor.Message.request('preview', 'query-preview-url');
-                debug.push(`step1 query-preview-url OK: ${url}`);
-            } catch (e: any) {
-                debug.push(`step1 query-preview-url FAIL: ${e && e.message ? e.message : e}`);
+            } catch (e) {
+                // query-preview-url 不可用时回退默认端口
             }
             if (!url) {
                 url = 'http://localhost:7456';
-                debug.push(`step1 fallback url: ${url}`);
             }
 
-            // 2. 优先触发编辑器原生预览（让 Cocos 自己启动预览服务并打开浏览器）
-            //    类型定义里 preview 模块只有 query-preview-url，但运行时的 preview-server
-            //    等内置包可能有 open 消息（类型未公开），逐个试探并记录返回值。
-            const msgCandidates: Array<[string, string]> = [
-                ['preview-server', 'open'],
-                ['preview-server', 'open-preview'],
-                ['preview', 'open'],
-            ];
-            let previewTriggered = false;
-            for (const [pkg, method] of msgCandidates) {
+            // 3. 若指定场景，切换当前场景再预览
+            //    3.7.3 没有"不切场景直接预览指定场景"的消息，只能先切换当前编辑场景
+            if (sceneUuid) {
                 try {
-                    const r: any = await Editor.Message.request(pkg, method);
-                    debug.push(`step2 message ${pkg}:${method} => ${JSON.stringify(r)}`);
-                    if (r !== undefined && r !== null && r !== false) {
-                        previewTriggered = true;
-                        break;
-                    }
+                    await Editor.Message.request('scene', 'open-scene', sceneUuid);
+                    // 场景加载需要时间，等待一下再预览
+                    await new Promise<void>((resolve) => setTimeout(resolve, 1000));
                 } catch (e: any) {
-                    debug.push(`step2 message ${pkg}:${method} FAIL: ${e && e.message ? e.message : e}`);
+                    console.log(`[ProjectTools] scene:open-scene 失败: ${e && e.message ? e.message : e}`);
                 }
             }
 
-            // 3. 原生预览消息都没触发时，才退而用 shell.openExternal / 系统命令打开 URL
-            if (!previewTriggered) {
-                debug.push('step3 原生预览消息未触发，回退到 openExternal/execSync');
-                try {
-                    const electron: any = require('electron');
-                    debug.push(`step3 require('electron') keys: ${Object.keys(electron || {}).slice(0, 12).join(',')}`);
-                    const shell = electron && electron.shell;
-                    if (shell && typeof shell.openExternal === 'function') {
-                        await shell.openExternal(url);
-                        debug.push('step3 openExternal called, no throw');
-                    } else {
-                        debug.push(`step3 shell.openExternal missing (shell=${shell ? Object.keys(shell).join(',') : 'undefined'})`);
-                        throw new Error('openExternal unavailable');
-                    }
-                } catch (e: any) {
-                    debug.push(`step3 openExternal FAIL: ${e && e.message ? e.message : e}`);
-                    // 兜底：用系统命令同步打开（start 命令本身立即返回，不会阻塞）
-                    try {
-                        const { execSync } = require('child_process');
-                        const cmd = process.platform === 'win32' ? `start "" "${url}"`
-                            : process.platform === 'darwin' ? `open "${url}"`
-                            : `xdg-open "${url}"`;
-                        execSync(cmd, { stdio: 'ignore' });
-                        debug.push(`step3 execSync OK: ${cmd}`);
-                    } catch (e2: any) {
-                        debug.push(`step3 execSync FAIL: ${e2 && e2.message ? e2.message : e2}`);
-                    }
+            // 4. 打开浏览器（openExternal，失败兜底 execSync 系统命令）
+            try {
+                const electron: any = require('electron');
+                const shell = electron && electron.shell;
+                if (shell && typeof shell.openExternal === 'function') {
+                    await shell.openExternal(url);
+                } else {
+                    throw new Error('openExternal unavailable');
                 }
+            } catch (e) {
+                // 主进程拿不到 electron.shell 时，用系统命令兜底
+                const { execSync } = require('child_process');
+                const cmd = process.platform === 'win32' ? `start "" "${url}"`
+                    : process.platform === 'darwin' ? `open "${url}"`
+                    : `xdg-open "${url}"`;
+                execSync(cmd, { stdio: 'ignore' });
             }
 
+            const msg = sceneUuid
+                ? `已预览场景 ${scene} (uuid=${sceneUuid})`
+                : `浏览器预览已打开: ${url}`;
             return {
                 success: true,
-                message: `浏览器预览已打开: ${url}`,
+                message: msg,
                 data: {
                     platform,
                     url,
-                    debug
+                    scene: scene || undefined,
+                    sceneUuid
                 }
             };
         } catch (err: any) {

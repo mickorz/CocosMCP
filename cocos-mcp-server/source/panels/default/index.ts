@@ -59,7 +59,7 @@ module.exports = Editor.Panel.define({
                     const translations: Record<string, Record<string, string>> = {
                         zh: {
                             // 品牌区
-                            brand_name: 'LiDaxian MCP',
+                            brand_name: 'Cocos MCP',
                             brand_slogan: '开源版本',
                             pro_upgrade: '升级为PRO版本',
                             pro_tip: '升级到专业版',
@@ -111,7 +111,7 @@ module.exports = Editor.Panel.define({
                         },
                         en: {
                             // 品牌区
-                            brand_name: 'LiDaxian MCP',
+                            brand_name: 'Cocos MCP',
                             brand_slogan: 'Open Source Edition',
                             pro_upgrade: 'Upgrade to PRO',
                             pro_tip: 'Upgrade to Pro',
@@ -177,18 +177,6 @@ module.exports = Editor.Panel.define({
                         currentLanguage.value = lang;
                         if (typeof localStorage !== 'undefined') {
                             localStorage.setItem('cocos-mcp-language', lang);
-                        }
-                    };
-
-                    const openProLink = () => {
-                        const url = 'https://www.vberai.com/game-engines/cocos';
-                        try {
-                            // Cocos Creator 面板运行在 Electron 渲染进程中
-                            const { shell } = require('electron');
-                            shell.openExternal(url);
-                        } catch (e) {
-                            // fallback: 用 window.open
-                            window.open(url, '_blank');
                         }
                     };
 
@@ -455,7 +443,6 @@ module.exports = Editor.Panel.define({
                         currentLanguage,
                         t,
                         switchLanguage,
-                        openProLink,
 
                         // 数据
                         activeTab,
