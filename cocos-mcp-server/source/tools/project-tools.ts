@@ -106,17 +106,108 @@ export class ProjectTools implements ToolExecutor {
     }
 
     // Original implementation methods
+    /**
+     * 运行项目预览
+     *
+     * 浏览器预览打开流程：
+     *   runProject(platform)
+     *     ├─ platform != browser → 打开构建面板（回退，simulator/preview 仍需手动）
+     *     └─ platform == browser
+     *          ├─ preview:query-preview-url 取预览地址（失败则回退默认 7456）
+     *          └─ shell.openExternal 打开默认浏览器（失败则回退 child_process 系统命令）
+     *
+     * 说明：Cocos 的 preview 消息模块没有 open 这类触发消息，但编辑器打开项目时
+     *       预览服务会常驻在 7456 端口，因此直接打开该地址即可，无需额外触发。
+     */
     private async runProject(platform: string = 'browser'): Promise<ToolResponse> {
-        // Note: Preview module is not documented in official API
-        // Using fallback approach - open build panel as alternative
         try {
-            await Editor.Message.request('builder', 'open');
+            // 非 browser 平台仍走构建面板（浏览器预览仅支持 browser）
+            if (platform !== 'browser') {
+                await Editor.Message.request('builder', 'open');
+                return {
+                    success: true,
+                    message: `Build panel opened for platform=${platform}.`,
+                    data: {
+                        platform,
+                        instruction: '浏览器预览仅支持 browser 平台；其它平台请在构建面板手动操作。'
+                    }
+                };
+            }
+
+            const debug: string[] = [];
+
+            // 1. 优先向编辑器查询预览地址，避免硬编码端口
+            let url = '';
+            try {
+                url = await Editor.Message.request('preview', 'query-preview-url');
+                debug.push(`step1 query-preview-url OK: ${url}`);
+            } catch (e: any) {
+                debug.push(`step1 query-preview-url FAIL: ${e && e.message ? e.message : e}`);
+            }
+            if (!url) {
+                url = 'http://localhost:7456';
+                debug.push(`step1 fallback url: ${url}`);
+            }
+
+            // 2. 优先触发编辑器原生预览（让 Cocos 自己启动预览服务并打开浏览器）
+            //    类型定义里 preview 模块只有 query-preview-url，但运行时的 preview-server
+            //    等内置包可能有 open 消息（类型未公开），逐个试探并记录返回值。
+            const msgCandidates: Array<[string, string]> = [
+                ['preview-server', 'open'],
+                ['preview-server', 'open-preview'],
+                ['preview', 'open'],
+            ];
+            let previewTriggered = false;
+            for (const [pkg, method] of msgCandidates) {
+                try {
+                    const r: any = await Editor.Message.request(pkg, method);
+                    debug.push(`step2 message ${pkg}:${method} => ${JSON.stringify(r)}`);
+                    if (r !== undefined && r !== null && r !== false) {
+                        previewTriggered = true;
+                        break;
+                    }
+                } catch (e: any) {
+                    debug.push(`step2 message ${pkg}:${method} FAIL: ${e && e.message ? e.message : e}`);
+                }
+            }
+
+            // 3. 原生预览消息都没触发时，才退而用 shell.openExternal / 系统命令打开 URL
+            if (!previewTriggered) {
+                debug.push('step3 原生预览消息未触发，回退到 openExternal/execSync');
+                try {
+                    const electron: any = require('electron');
+                    debug.push(`step3 require('electron') keys: ${Object.keys(electron || {}).slice(0, 12).join(',')}`);
+                    const shell = electron && electron.shell;
+                    if (shell && typeof shell.openExternal === 'function') {
+                        await shell.openExternal(url);
+                        debug.push('step3 openExternal called, no throw');
+                    } else {
+                        debug.push(`step3 shell.openExternal missing (shell=${shell ? Object.keys(shell).join(',') : 'undefined'})`);
+                        throw new Error('openExternal unavailable');
+                    }
+                } catch (e: any) {
+                    debug.push(`step3 openExternal FAIL: ${e && e.message ? e.message : e}`);
+                    // 兜底：用系统命令同步打开（start 命令本身立即返回，不会阻塞）
+                    try {
+                        const { execSync } = require('child_process');
+                        const cmd = process.platform === 'win32' ? `start "" "${url}"`
+                            : process.platform === 'darwin' ? `open "${url}"`
+                            : `xdg-open "${url}"`;
+                        execSync(cmd, { stdio: 'ignore' });
+                        debug.push(`step3 execSync OK: ${cmd}`);
+                    } catch (e2: any) {
+                        debug.push(`step3 execSync FAIL: ${e2 && e2.message ? e2.message : e2}`);
+                    }
+                }
+            }
+
             return {
                 success: true,
-                message: `✅ Build panel opened. Preview functionality requires manual setup for ${platform}.`,
+                message: `浏览器预览已打开: ${url}`,
                 data: {
                     platform,
-                    instruction: "Use the build panel to configure and start preview manually"
+                    url,
+                    debug
                 }
             };
         } catch (err: any) {

@@ -40,3 +40,11 @@ npm-debug.log*
 # CocosMCP/CocosMCP/.gitignore 覆盖
 # 此处仅作仓库根级别补充
 #///////////////////////////
+
+#///////////////////////////
+# Cocos MCP 服务器运行时配置（本机状态，不进 git）
+# mcp-server.json 为面板端口设置，tool-manager.json 为工具启用状态
+#///////////////////////////
+CocosMCP/settings/mcp-server.json
+CocosMCP/settings/tool-manager.json
+CocosMCP/.creator/
