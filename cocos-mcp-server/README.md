@@ -1,114 +1,10 @@
 # Cocos Creator MCP 服务器插件
 
-🌐 **简体中文** · [English](README.EN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Português](README.pt.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Русский](README.ru.md) · [Tiếng Việt](README.vi.md)
-
 一个适用于 Cocos Creator 3.8+ 的综合性 MCP（模型上下文协议）服务器插件，使 AI 助手能够通过标准化协议与 Cocos Creator 编辑器进行交互。一键安装和使用，省去所有繁琐环境和配置。已经测试过Claude客户端Claude CLI和Cursor，其他的编辑器理论上也完美支持。
 
 **🚀 现在提供 50 个强力融合工具，实现99%的编辑器控制！**
 
-## PRO版本已经更新到了1.7.8
-
-| 类型 | 链接 |
-|------|------|
-| **视频预览** | [Bilibili 视频](https://www.bilibili.com/video/BV1rTAXzuEH3/) |
-| **免费体验** | [vberai cocos creator 3.x版本 mcp  Pro 体验地址](https://www.vberai.com/game-engines/cocos) |
-| **免费体验** | [vberai cocos creator 2.x版本 mcp  Pro 体验地址](https://www.vberai.com/game-engines/cocos2x) |
-| **AI 设计画布** | [VberAI Studio —— 全球首个游戏 AI 原生设计平台](https://studio.vberai.com) |
-| **官网** | [VberAI 官网 vberai.com](https://www.vberai.com) |
-
-## Cocos MCP 3.x Pro 版本特性
-
-> 🚀 Pro 版由 **VberAI** 打造并持续维护 —— [立即体验 Pro 版](https://www.vberai.com/game-engines/cocos) ｜ [观看视频演示](https://www.bilibili.com/video/BV1rTAXzuEH3/)
-
-专为 **Cocos Creator 3.8.6+** 打造的专业级 MCP（模型上下文协议）插件，让 AI 助手通过标准化协议直接操控编辑器。**16 个意图级工具**覆盖 **231 项操作**，横跨 **12 大能力模块**，贯穿 Cocos Creator 3.x 开发全流程。采用 **Streamable HTTP** 协议，配合 Token 优化设计，更省 Token、调用更稳定，支持一键配置主流 AI 客户端（Cursor、Claude、Windsurf 等）。
-
-| 意图级工具 | 覆盖操作 | 覆盖模块 | 通信协议 |
-|:---:|:---:|:---:|:---:|
-| **16** | **231** | **12 大模块** | **Streamable HTTP** |
-
-### 十二大能力模块
-
-| 模块 | 操作数 | 说明 |
-| ------------- | -----: | ------------------------------------------------------------ |
-| 场景管理      |     24 | 场景的打开、保存、创建与切换，层级查询与快照，支持撤销操作和脚本执行。 |
-| 节点操作      |     18 | 节点的完整 CRUD，支持批量修改、脚本挂载、节点类型检测和剪贴板操作。 |
-| 组件系统      |      8 | 组件的增删查改和属性设置，支持点击事件绑定和批量事件配置。   |
-| 预制体系统    |     13 | 预制体的创建、实例化、编辑模式切换，支持应用/还原变更和预制体验证。 |
-| 资源管理      |     19 | 资源的查询、搜索、CRUD 与导入，支持依赖分析、UUID 与路径转换。 |
-| 编辑器控制    |     33 | 工程设置、日志、偏好、构建与预览等编辑器级操作。             |
-| 场景视图      |     32 | Gizmo、相机、网格与参考图，提供视口上下文与边界感知控制。    |
-| UI 与模板构建 |     13 | 一键创建 UI 组件，JSON 树构建完整节点层级，内置多种 UI 模板。 |
-| 动画系统      |     39 | 关键帧编辑、曲线调整、动画事件、预设应用，及 Spine 骨骼动画管理。 |
-| 知识库查询    |      8 | 内置组件属性、UI 设计规则、布局模式和最佳实践知识库，AI 精准辅助开发。 |
-| 验证与快照    |      6 | 场景布局检查、资源引用验证、层级分析，配合场景快照回归校验。 |
-| 字体与 Label  |      9 | 字体资源管理与富文本 Label 操作，覆盖文字排版设置。          |
-
-#### 智能特性
-
-- **智能路径解析** — 所有节点参数接受 UUID、路径（如 `Canvas/Panel/Button`）或名称，自动解析
-- **UI 自动检测** — 在 UI 父节点下创建节点时自动添加 `cc.UITransform`
-- **视口上下文** — 创建/修改节点时返回设计分辨率、可见范围，越界自动警告
-- **内置知识库** — AI 可查询组件属性表、坐标系规则、布局模式等知识
-- **场景构建器** — 用 JSON 描述完整 UI 层级，一次调用构建出来，自动处理 Canvas/Camera/组件配置
-- **参考图片系统** — 在场景视图叠加 UI 设计稿，AI 看着设计图搭界面
-- **节点树缓存** — 2 秒 TTL 缓存避免重复查询，变更操作后自动失效
-- **原子化操作** — builder/composite 使用 snapshot 机制，失败时自动回滚
-
-### Pro 版 vs 开源版
-
-| 功能 | 开源版 | Pro 版 |
-|------|:---:|:---:|
-| 通信协议 | HTTP 协议 | **Streamable HTTP** |
-| Token 优化 | 基础设计 | 优化设计，更省 Token 更稳定 |
-| 操作码方法 | ✕ | ✅ |
-| 一键配置 | ✕ | ✅ |
-| 工具自定义 | ✕ | ✅ |
-| 意图级工具 | 基础工具 | 16 种，覆盖 231 项操作 |
-| 一次性创建场景 | ✕ | ✅ |
-| 内置知识库 | ✕ | ✅ |
-| 动画 / Spine 系统 | ✕ | ✅ 39 项动画操作 |
-
----
-
-## 🌐 关于 VberAI —— AI 原生游戏生产力平台
-
-**VberAI** 是面向游戏开发者、美术团队与内容团队的 **AI 原生游戏生产力平台**，也是本 Cocos MCP 插件 Pro 版的开发与维护方。VberAI 是目前**唯一同时为 Unity、Godot、Cocos Creator 三大主流引擎提供 MCP 插件**的厂商，围绕「让 AI 真正融入游戏生产管线」打造三条产品线：
-
-- **🎮 游戏引擎 MCP 插件** —— 在引擎编辑器内运行 MCP 服务，让 Claude Desktop、Claude Code、Cursor、Windsurf、Cline 等 AI 客户端直接读取并操作场景、组件、资源、动画与脚本。
-- **🎨 AI Studio** —— AI 原生游戏设计画布，一端导入 PSD / Figma / 引擎项目，另一端导出 Unity / Cocos / Godot 场景与预制体。
-- **✂️ AI 超强抠图（AI Super Matting）** —— 浏览器端一键抠图，发丝级精度 + 真实 Alpha 通道输出，按量计费。
-
-### 引擎 MCP 插件家族
-
-| 插件 | 说明 |
-|------|------|
-| **Unity MCP** | 企业级 MCP 插件，覆盖场景 / GameObject / 组件 / 预制体 / 材质 / 动画 / Shader，支持 Unity 2022.3+ 与 Unity 6 |
-| **Cocos MCP 3.x Pro** | 本项目 Pro 版，16 个意图级工具 / 231 项操作，Cocos Creator 3.8.6+，Streamable HTTP |
-| **Cocos MCP 2.x Pro** | 面向 Cocos Creator 2.4.x+ 老项目（仍在运营的 2.x 线上项目）量身打造 |
-| **Godot MCP** | 完全免费、MIT 开源，100+ 工具命令覆盖 21 个系统，Godot 4.x，兼容 GDScript 与 C# |
-
-
----
-
-## 🎨 VberAI Studio —— 全球首个游戏 AI 原生设计平台
-
-> **为游戏而生的 AI 原生设计平台。** 从底层开始兼容 Unity、Cocos、Godot 引擎，超多高频 AI 工具与自动化流程，让美术生成、一键换皮、资产管理、设计稿到引擎一体化交付，再加上引擎反向回流，彻底打通「AI 设计 → 游戏引擎 AI」全开发链路。
->
-> 👉 **[立即进入 AI Studio](https://studio.vberai.com)** ｜ [了解更多](https://www.vberai.com/studio)
-
-
-### 完整生产链路
-
-**导入设计与项目资产 → AI 高频生成与编辑 → 组件化引擎交付 → 通过 Engine MCP 实时同步到引擎 → 引擎反向回流**
-
-配合本 Cocos MCP 插件，AI Studio 把场景、预制体、组件与美术资源回写到工程后，Engine MCP 让 AI 在 Cocos Creator 中继续完成脚本、组件配置、资源管理与调试，形成端到端的开发闭环 —— 大幅提升团队效率，甚至让一个人就是一支队伍。
-
-**🔗 相关链接**：[VberAI 官网](https://www.vberai.com) ｜ [AI Studio](https://studio.vberai.com) ｜ [AI 超强抠图](https://www.vberai.com/ai-studio/bg-removal) ｜ [平台定价](https://www.vberai.com/pricing) ｜ 联系支持：support@vberai.com
-
----
-
-
-## 开源版本更新日志
+## 请勿开源更新日志
 
 ## 🚀 重大更新 v1.5.4
 
@@ -521,5 +417,6 @@ npm run build
 
 本插件供 Cocos Creator 项目使用,并且源代码一并打包，可以用于学习和交流。没有加密。可以支持你自己二次开发优化，任何本项目代码或者衍生代码均不能用于任何商用、转售，如果需要商用，请联系本人。
 
-## 联系我加入群
-<img alt="image" src="https://github.com/user-attachments/assets/a276682c-4586-480c-90e5-6db132e89e0f" width="400" height="400" />
+## 联系方式
+
+邮箱：mike.newsky@gmail.com

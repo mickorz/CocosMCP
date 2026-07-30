@@ -60,7 +60,7 @@ module.exports = Editor.Panel.define({
                         zh: {
                             // 品牌区
                             brand_name: 'Cocos MCP',
-                            brand_slogan: '开源版本',
+                            brand_slogan: '请勿开源',
                             pro_upgrade: '升级为PRO版本',
                             pro_tip: '升级到专业版',
                             // 语言

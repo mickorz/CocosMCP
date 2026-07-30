@@ -176,12 +176,12 @@ section h3 {
     font-weight: 600;
 }
 
-.status-value.running {
+.status-value.status-running {
     color: var(--color-success-fill);
 }
 
-.status-value.stopped {
-    color: var(--color-warn-fill);
+.status-value.status-stopped {
+    color: var(--color-danger-fill);
 }
 
 .server-controls {

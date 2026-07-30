@@ -3,7 +3,7 @@
     "package_version": 2,
     "name": "cocos-mcp-server",
     "version": "1.5.4",
-    "author": "LiDaxian",
+    "author": "ZhangQi",
     "editor": ">=3.7.3",
     "scripts": {
         "preinstall": "node ./scripts/preinstall.js",
