@@ -57,11 +57,11 @@
             </ui-prop>
             <ui-prop>
                 <ui-label slot="label">{{ t('auto_start') }}</ui-label>
-                <ui-checkbox slot="content" v-model="settings.autoStart"></ui-checkbox>
+                <ui-checkbox slot="content" :value="settings.autoStart" @change="settings.autoStart = $event.target.checked"></ui-checkbox>
             </ui-prop>
             <ui-prop>
                 <ui-label slot="label">{{ t('debug_log') }}</ui-label>
-                <ui-checkbox slot="content" v-model="settings.debugLog"></ui-checkbox>
+                <ui-checkbox slot="content" :value="settings.debugLog" @change="settings.debugLog = $event.target.checked"></ui-checkbox>
             </ui-prop>
             <ui-prop>
                 <ui-label slot="label">{{ t('max_connections') }}</ui-label>
