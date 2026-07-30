@@ -10,7 +10,7 @@
  *
  * 规则：
  *   - 仅同步 .md 文件
- *   - 排除 submodule (cocos-mcp-server) 与 .git 等目录
+ *   - 排除 cocos-mcp-server (第三方扩展目录) 与 .git 等目录
  *   - Obsidian 内保持相对仓库根的目录结构
  *
  * 可配置（环境变量）：

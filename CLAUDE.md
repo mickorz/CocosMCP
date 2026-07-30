@@ -7,12 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 根目录本身是一个 git 仓库，组合了三个部分：
 
 - `CocosMCP/` —— Cocos Creator 游戏项目（3.7.3），是 AI 操控的目标场景所在（当前 `assets/` 为空）。
-- `cocos-mcp-server/` —— **git submodule**，指向 `https://github.com/mickorz/cocos-mcp-server.git`。一个 Cocos Creator 编辑器扩展，内嵌 MCP（Model Context Protocol）服务器，让 AI 客户端（Claude、Cursor 等）通过 HTTP 标准化协议操控编辑器。开源版 v1.5.4，共 50 个工具。
-- `acp.sh` / `acpExample.sh` —— 根目录 git 工作流脚本，一键 add/commit/push 主仓库与所有 submodule。
+- `cocos-mcp-server/` —— Cocos Creator 编辑器扩展（已解除 submodule，作为主仓库的普通子目录直接被 git 跟踪）。内嵌 MCP（Model Context Protocol）服务器，让 AI 客户端（Claude、Cursor 等）通过 HTTP 标准化协议操控编辑器。开源版 v1.5.4，共 50 个工具。
+- `acp.sh` / `acpExample.sh` —— 根目录 git 工作流脚本，一键 add/commit/push（已无 submodule，直接处理主仓库）。
 
 ## 常用命令
 
-### cocos-mcp-server（submodule，TypeScript 扩展）
+### cocos-mcp-server（TypeScript 扩展）
 ```bash
 cd cocos-mcp-server
 npm install          # 触发 preinstall：联网校验 @cocos/creator-types 版本
@@ -26,9 +26,9 @@ npm run watch        # tsc -w 监听重新编译
 - 用 Cocos Creator 编辑器打开 `CocosMCP/` 目录运行/预览；脚本编译由编辑器自动处理。
 - `CocosMCP/tsconfig.json` 继承 `./temp/tsconfig.cocos.json`（编辑器生成，勿改 base 字段）。
 
-### Git（一键提交主仓库 + submodule）
+### Git（一键提交）
 ```bash
-bash acp.sh "提交说明"   # 先提交各 submodule，再提交主仓库，最后全部 push
+bash acp.sh "提交说明"   # 已无 submodule，直接 add/commit/push 主仓库（含 cocos-mcp-server 改动）
 bash acpExample.sh       # 只读自检（不推送），确认脚本与仓库识别正确
 ```
 
@@ -61,9 +61,9 @@ flowchart LR
 
 ## 重要约定与注意事项
 
-- **submodule 是第三方上游**：`cocos-mcp-server` 来自 `mickorz/cocos-mcp-server`。一般不在本仓库内修改其源码；如需定制，应 fork 或向上游提 PR，再用 `acp.sh` 在 submodule 内提交并推送，主仓库随后更新指针。
-- **clone 后必须初始化 submodule**：`git submodule update --init --recursive`，否则 `cocos-mcp-server/` 为空。
-- **`acp.sh` 的提交顺序不可颠倒**：先 submodule 后主仓库。若先提交主仓库，主仓库记录的会是 submodule 的旧 commit 指针。
+- **`cocos-mcp-server` 是主仓库的普通子目录**：已解除 submodule（commit b33058d），源码直接被主仓库 git 跟踪，远程为本地 Gitea（`http://127.0.0.1:3000/mickorz/CocosMCP.git`），不再是 GitHub 的 submodule。改源码后直接在主仓库提交即可，无需 fork/PR、无需更新指针。
+- **无需初始化 submodule**：clone 后直接可用，不再需要 `git submodule update --init`。
+- **`acp.sh` 直接提交主仓库**：已无 submodule，脚本会跳过 submodule 阶段，直接 add/commit/push 主仓库（`cocos-mcp-server` 的改动随主仓库一起提交）。
 - **版本不匹配需留意**：扩展要求 Cocos Creator `>=3.8.6`，而 `CocosMCP` 项目是 `3.7.3`。在该项目里启用扩展可能需要升级编辑器版本。
 - **扩展加载**：`cocos-mcp-server` 需构建后在 Cocos Creator 扩展管理器中加载（入口 `dist/main.js`），接入步骤参考 `cocos-mcp-server/README.md`。
 - **忽略规则分层**：根目录 `.gitignore` 负责根级别（OS / IDE / 日志）；`CocosMCP/.gitignore`（Cocos 标准模板）忽略 `library/ temp/ build/ profiles/ local/ node_modules/`。提交前确认未把 `library/`、`temp/` 等大目录带入。
@@ -86,7 +86,7 @@ New-Item -ItemType Junction -Path "<项目路径>/extensions/cocos-mcp-server" -
 本项目所有 Markdown 文档（`.md`）的**新增 / 修改 / 删除**会自动镜像到 Obsidian 知识库：
 
 - 目标目录：`E:\Obsidian\newsky\AI岗位\CocosMCP`
-- 范围：仓库内所有 `.md`，**排除 submodule**（`cocos-mcp-server`）等目录
+- 范围：仓库内所有 `.md`，**排除 `cocos-mcp-server`（第三方扩展目录）**等目录
 - 结构：Obsidian 内保持相对仓库根的目录路径
 
 实现方式（Claude Code hook 自动化，无需手动复制）：
