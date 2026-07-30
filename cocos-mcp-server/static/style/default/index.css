@@ -508,6 +508,65 @@ ui-button.secondary:hover {
     font-size: 14px;
 }
 
+/* 技能安装器样式 */
+.skill-gen-tip {
+    font-size: 12px;
+    color: var(--color-normal-text-secondary);
+    margin: 8px 0 12px 0;
+    line-height: 1.5;
+}
+
+.skill-gen-actions,
+.skill-install-actions {
+    margin-top: 10px;
+}
+
+.skill-platforms {
+    margin-top: 10px;
+}
+
+.skill-platform-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--color-normal-border);
+}
+
+.skill-platform-item:last-child {
+    border-bottom: none;
+}
+
+.skill-platform-label {
+    flex: 1;
+    font-size: 13px;
+    color: var(--color-normal-text);
+}
+
+.skill-platform-status {
+    font-size: 12px;
+    color: var(--color-normal-text-secondary);
+}
+
+.skill-platform-status.installed {
+    color: var(--color-success-fill);
+    font-weight: 600;
+}
+
+.skill-message {
+    margin-top: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    background: var(--color-success-fill);
+    color: var(--color-primary-text);
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+.skill-message.skill-error {
+    background: var(--color-danger-fill);
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
     .mcp-server-panel {

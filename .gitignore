@@ -47,4 +47,14 @@ npm-debug.log*
 #///////////////////////////
 CocosMCP/settings/mcp-server.json
 CocosMCP/settings/tool-manager.json
+CocosMCP/settings/skill-installer.json
 CocosMCP/.creator/
+
+#///////////////////////////
+# AI 客户端目录（技能 Tab 安装产物 + 各客户端本地数据，不进 git）
+#///////////////////////////
+CocosMCP/.claude/
+CocosMCP/.opencode/
+CocosMCP/.gemini/
+CocosMCP/.codex/
+CocosMCP/.antigravity/

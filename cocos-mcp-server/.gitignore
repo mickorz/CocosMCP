@@ -87,3 +87,6 @@ dist/examples/
 *.backup
 *.bak
 *.old
+
+# 技能安装器生成产物与用户手写定制技能（运行时生成，不进 git）
+CodeAgents/

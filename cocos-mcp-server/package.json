@@ -136,6 +136,26 @@
                 "methods": [
                     "getEnabledTools"
                 ]
+            },
+            "getSkillInstallerState": {
+                "methods": [
+                    "getSkillInstallerState"
+                ]
+            },
+            "updateSkillInstallerSettings": {
+                "methods": [
+                    "updateSkillInstallerSettings"
+                ]
+            },
+            "generateSkills": {
+                "methods": [
+                    "generateSkills"
+                ]
+            },
+            "installSkills": {
+                "methods": [
+                    "installSkills"
+                ]
             }
         },
         "scene": {

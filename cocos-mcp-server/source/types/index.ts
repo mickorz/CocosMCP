@@ -147,3 +147,19 @@ export interface ToolManagerState {
     currentConfiguration: ToolConfiguration | null;
     configurations: ToolConfiguration[];
 }
+
+// 技能安装器相关接口
+export type SkillPlatformKey = 'claude' | 'gemini' | 'codex' | 'antigravity' | 'opencode';
+
+export interface SkillInstallerSettings {
+    autoInstall: boolean;
+    platforms: Record<SkillPlatformKey, boolean>;
+    lastGenerated: string;
+}
+
+export interface SkillPlatformState {
+    key: string;
+    label: string;
+    selected: boolean;
+    installed: boolean;
+}

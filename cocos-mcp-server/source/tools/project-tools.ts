@@ -26,6 +26,11 @@ export class ProjectTools implements ToolExecutor {
                             type: 'string',
                             description: '(run + browser 可选) 要预览的场景，Cocos 资源 URL。推荐格式: db://assets/scenes/sss.scene。也兼容 assets 相对路径(如 scenes/sss.scene 或 scenes/sss，会自动补全为 db://assets/...)。省略则预览当前编辑器打开的场景。'
                         },
+                        openBrowser: {
+                            type: 'boolean',
+                            description: '(run + browser 可选) 是否自动打开系统浏览器。默认 true(保持兼容)。传 false 时只启动预览服务并返回 localhost 地址，不弹系统浏览器窗口——配合外部专用调试浏览器(如 chrome-devtools-mcp)使用，避免出现两个窗口。',
+                            default: true
+                        },
                         // For build action
                         buildPlatform: {
                             type: 'string',
@@ -83,7 +88,7 @@ export class ProjectTools implements ToolExecutor {
         
         switch (action) {
             case 'run':
-                return await this.runProject(args.platform, args.scene);
+                return await this.runProject(args.platform, args.scene, args.openBrowser);
             case 'build':
                 return await this.buildProject({ platform: args.buildPlatform, debug: args.debug });
             case 'get_info':
@@ -121,9 +126,10 @@ export class ProjectTools implements ToolExecutor {
      *          ├─ scene 给定 → db:// URL 或 assets 相对路径，asset-db:query-uuid 取场景 uuid
      *          │    └─ scene:open-scene 切换当前场景(3.7.3 无"不切场景直接预览"消息)
      *          ├─ preview:query-preview-url 取预览地址(失败回退 7456)
-     *          └─ shell.openExternal 打开浏览器(失败回退 execSync 系统命令)
+     *          └─ openBrowser=true 时 shell.openExternal 打开浏览器(失败回退 execSync 系统命令)
+     *             openBrowser=false 跳过打开浏览器，只返回 localhost 地址供专用调试浏览器使用
      */
-    private async runProject(platform: string = 'browser', scene?: string): Promise<ToolResponse> {
+    private async runProject(platform: string = 'browser', scene?: string, openBrowser: boolean = true): Promise<ToolResponse> {
         try {
             // 非 browser 平台仍走构建面板（浏览器预览仅支持 browser）
             if (platform !== 'browser') {
@@ -182,6 +188,12 @@ export class ProjectTools implements ToolExecutor {
             if (!url) {
                 url = 'http://localhost:7456';
             }
+            // 规范成 localhost 地址：query-preview-url 可能返回真实局域网 IP，换环境会失效
+            let localhostUrl = 'http://localhost:7456';
+            const portMatch = url.match(/:(\d{2,5})(?:\/|$)/);
+            if (portMatch) {
+                localhostUrl = `http://localhost:${portMatch[1]}`;
+            }
 
             // 3. 若指定场景，切换当前场景再预览
             //    3.7.3 没有"不切场景直接预览指定场景"的消息，只能先切换当前编辑场景
@@ -195,33 +207,40 @@ export class ProjectTools implements ToolExecutor {
                 }
             }
 
-            // 4. 打开浏览器（openExternal，失败兜底 execSync 系统命令）
-            try {
-                const electron: any = require('electron');
-                const shell = electron && electron.shell;
-                if (shell && typeof shell.openExternal === 'function') {
-                    await shell.openExternal(url);
-                } else {
-                    throw new Error('openExternal unavailable');
+            // 4. 打开浏览器（仅 openBrowser=true 时；openExternal 失败兜底 execSync 系统命令）
+            if (openBrowser) {
+                try {
+                    const electron: any = require('electron');
+                    const shell = electron && electron.shell;
+                    if (shell && typeof shell.openExternal === 'function') {
+                        await shell.openExternal(url);
+                    } else {
+                        throw new Error('openExternal unavailable');
+                    }
+                } catch (e) {
+                    // 主进程拿不到 electron.shell 时，用系统命令兜底
+                    const { execSync } = require('child_process');
+                    const cmd = process.platform === 'win32' ? `start "" "${url}"`
+                        : process.platform === 'darwin' ? `open "${url}"`
+                        : `xdg-open "${url}"`;
+                    execSync(cmd, { stdio: 'ignore' });
                 }
-            } catch (e) {
-                // 主进程拿不到 electron.shell 时，用系统命令兜底
-                const { execSync } = require('child_process');
-                const cmd = process.platform === 'win32' ? `start "" "${url}"`
-                    : process.platform === 'darwin' ? `open "${url}"`
-                    : `xdg-open "${url}"`;
-                execSync(cmd, { stdio: 'ignore' });
             }
 
-            const msg = sceneUuid
-                ? `已预览场景 ${scene} (uuid=${sceneUuid})`
-                : `浏览器预览已打开: ${url}`;
+            // openBrowser=false 时返回 localhost 地址，供外部专用调试浏览器(如 chrome-devtools-mcp)使用
+            const returnUrl = openBrowser ? url : localhostUrl;
+            const msg = openBrowser
+                ? (sceneUuid ? `已预览场景 ${scene} (uuid=${sceneUuid})` : `浏览器预览已打开: ${url}`)
+                : (sceneUuid
+                    ? `预览服务已启动(未打开系统浏览器)，场景 ${scene} (uuid=${sceneUuid})。专用调试浏览器请访问: ${localhostUrl}`
+                    : `预览服务已启动(未打开系统浏览器)。专用调试浏览器请访问: ${localhostUrl}`);
             return {
                 success: true,
                 message: msg,
                 data: {
                     platform,
-                    url,
+                    url: returnUrl,
+                    openBrowser,
                     scene: scene || undefined,
                     sceneUuid
                 }

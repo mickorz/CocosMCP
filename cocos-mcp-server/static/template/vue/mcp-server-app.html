@@ -21,6 +21,9 @@
         <button class="tab-button" :class="{ active: activeTab === 'server' }" @click="switchTab('server')">
             <span>{{ t('tab_server') }}</span>
         </button>
+        <button class="tab-button" :class="{ active: activeTab === 'skills' }" @click="switchTab('skills')">
+            <span>{{ t('tab_skills') }}</span>
+        </button>
         <button class="tab-button" :class="{ active: activeTab === 'tools' }" @click="switchTab('tools')">
             <span>{{ t('tab_tools') }}</span>
         </button>
@@ -85,6 +88,49 @@
         <footer>
             <ui-button @click="saveSettings" :disabled="!settingsChanged">{{ t('save_settings') }}</ui-button>
         </footer>
+    </div>
+
+    <!-- 技能选项卡 -->
+    <div class="tab-content" v-show="activeTab === 'skills'">
+        <section class="skill-generator">
+            <h3>{{ t('skill_generation') }}</h3>
+            <div class="skill-gen-info">
+                <ui-prop>
+                    <ui-label slot="label">{{ t('last_generated') }}</ui-label>
+                    <ui-label slot="content">{{ skillLastGenerated || t('not_generated') }}</ui-label>
+                </ui-prop>
+            </div>
+            <div class="skill-gen-tip">{{ t('skill_gen_tip') }}</div>
+            <div class="skill-gen-actions">
+                <ui-button @click="generateSkills" :disabled="skillGenerating" class="primary">
+                    {{ skillGenerating ? t('generating') : t('generate_skills') }}
+                </ui-button>
+            </div>
+            <div v-if="skillMessage" class="skill-message" :class="{ 'skill-error': !skillMessageSuccess }">{{ skillMessage }}</div>
+        </section>
+
+        <section class="skill-installer">
+            <h3>{{ t('install_options') }}</h3>
+            <ui-prop>
+                <ui-label slot="label">{{ t('auto_install') }}</ui-label>
+                <ui-checkbox slot="content" :value="skillAutoInstall" @change="onToggleAutoInstall($event.target.checked)"></ui-checkbox>
+            </ui-prop>
+            <div class="skill-platforms">
+                <div v-for="p in skillPlatforms" :key="p.key" class="skill-platform-item">
+                    <ui-checkbox :value="p.selected" @change="onTogglePlatform(p.key, $event.target.checked)"></ui-checkbox>
+                    <span class="skill-platform-label">{{ p.label }}</span>
+                    <span class="skill-platform-status" :class="{ installed: p.installed }">
+                        {{ p.installed ? t('installed') : t('not_installed') }}
+                    </span>
+                </div>
+            </div>
+            <div class="skill-install-actions">
+                <ui-button @click="installSkills" :disabled="skillInstalling" class="primary">
+                    {{ skillInstalling ? t('installing') : t('install_to_selected') }} ({{ selectedPlatformCount }})
+                </ui-button>
+            </div>
+            <div v-if="installMessage" class="skill-message" :class="{ 'skill-error': !installMessageSuccess }">{{ installMessage }}</div>
+        </section>
     </div>
 
     <!-- 工具管理选项卡 -->

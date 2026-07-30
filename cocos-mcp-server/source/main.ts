@@ -2,9 +2,11 @@ import { MCPServer } from './mcp-server';
 import { readSettings, saveSettings } from './settings';
 import { MCPServerSettings } from './types';
 import { ToolManager } from './tools/tool-manager';
+import { SkillInstaller } from './skill-installer';
 
 let mcpServer: MCPServer | null = null;
 let toolManager: ToolManager;
+let skillInstaller: SkillInstaller;
 
 /**
  * @en Registration method for the main process of Extension
@@ -193,6 +195,31 @@ export const methods: { [key: string]: (...any: any) => any } = {
 
     async getEnabledTools() {
         return toolManager.getEnabledTools();
+    },
+
+    // 技能安装器相关方法
+    async getSkillInstallerState() {
+        return skillInstaller.getState();
+    },
+
+    async updateSkillInstallerSettings(autoInstall: boolean, platforms: any) {
+        try {
+            skillInstaller.updateSettings(autoInstall, platforms);
+            return { success: true };
+        } catch (error: any) {
+            throw new Error(`保存技能安装设置失败: ${error.message}`);
+        }
+    },
+
+    async generateSkills() {
+        // 用当前 MCP 端口渲染 SKILL.md 里的 curl 示例
+        // 直接读持久化的 settings/mcp-server.json，确保用最新保存的端口（用户在服务器 Tab 改端口并保存后即生效）
+        const port = readSettings().port;
+        return skillInstaller.generateAndMaybeInstall(port);
+    },
+
+    async installSkills() {
+        return skillInstaller.installSkills();
     }
 };
 
@@ -205,6 +232,9 @@ export function load() {
     
     // 初始化工具管理器
     toolManager = new ToolManager();
+
+    // 初始化技能安装器
+    skillInstaller = new SkillInstaller();
     
     // 读取设置
     const settings = readSettings();

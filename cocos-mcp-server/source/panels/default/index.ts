@@ -67,6 +67,7 @@ module.exports = Editor.Panel.define({
                             language: '语言',
                             // 标签页
                             tab_server: '服务器',
+                            tab_skills: '技能',
                             tab_tools: '工具管理',
                             // 服务器页
                             server_status: '服务器状态',
@@ -108,6 +109,19 @@ module.exports = Editor.Panel.define({
                             cat_referenceImage: '参考图片工具',
                             cat_assetAdvanced: '高级资源工具',
                             cat_validation: '验证工具',
+                            // 技能页
+                            skill_generation: '技能生成',
+                            last_generated: '上次生成',
+                            not_generated: '尚未生成',
+                            skill_gen_tip: '一键生成 13 份 Cocos MCP 工作流技能文档(SKILL.md)到 CodeAgents/SkillAutoGenerate，可在该目录二次编辑后再安装。',
+                            generate_skills: '生成技能文档',
+                            generating: '生成中...',
+                            install_options: '安装选项',
+                            auto_install: '自动安装(生成后自动安装到勾选平台)',
+                            installed: '已安装',
+                            not_installed: '未安装',
+                            install_to_selected: '安装到选中平台',
+                            installing: '安装中...',
                         },
                         en: {
                             // 品牌区
@@ -119,6 +133,7 @@ module.exports = Editor.Panel.define({
                             language: 'Language',
                             // 标签页
                             tab_server: 'Server',
+                            tab_skills: 'Skills',
                             tab_tools: 'Tools',
                             // 服务器页
                             server_status: 'Server Status',
@@ -160,6 +175,19 @@ module.exports = Editor.Panel.define({
                             cat_referenceImage: 'Reference Image Tools',
                             cat_assetAdvanced: 'Asset Advanced Tools',
                             cat_validation: 'Validation Tools',
+                            // 技能页
+                            skill_generation: 'Skill Generation',
+                            last_generated: 'Last Generated',
+                            not_generated: 'Not generated yet',
+                            skill_gen_tip: 'One-click generate 13 Cocos MCP workflow skill docs (SKILL.md) into CodeAgents/SkillAutoGenerate. Edit them there before installing.',
+                            generate_skills: 'Generate Skills',
+                            generating: 'Generating...',
+                            install_options: 'Install Options',
+                            auto_install: 'Auto install (install to selected platforms after generate)',
+                            installed: 'Installed',
+                            not_installed: 'Not installed',
+                            install_to_selected: 'Install to selected',
+                            installing: 'Installing...'
                         }
                     };
 
@@ -210,12 +238,26 @@ module.exports = Editor.Panel.define({
 
                     
                     const settingsChanged = ref(false);
+
+                    // 技能安装器数据
+                    const skillPlatforms = ref<any[]>([]);
+                    const skillAutoInstall = ref(false);
+                    const skillLastGenerated = ref('');
+                    const skillGenerating = ref(false);
+                    const skillInstalling = ref(false);
+                    const skillMessage = ref('');
+                    const skillMessageSuccess = ref(true);
+                    const installMessage = ref('');
+                    const installMessageSuccess = ref(true);
+                    const selectedPlatformCount = computed(() => skillPlatforms.value.filter(p => p.selected).length);
                     
                     // 方法
                     const switchTab = (tabName: string) => {
                         activeTab.value = tabName;
                         if (tabName === 'tools') {
                             loadToolManagerState();
+                        } else if (tabName === 'skills') {
+                            loadSkillInstallerState();
                         }
                     };
                     
@@ -384,6 +426,84 @@ module.exports = Editor.Panel.define({
                     const getCategoryDisplayName = (category: string): string => {
                         return t('cat_' + category);
                     };
+
+                    // ===== 技能安装器方法 =====
+                    const loadSkillInstallerState = async () => {
+                        try {
+                            const result = await Editor.Message.request('cocos-mcp-server', 'getSkillInstallerState');
+                            if (result && result.success) {
+                                skillAutoInstall.value = !!result.autoInstall;
+                                skillLastGenerated.value = result.lastGenerated || '';
+                                skillPlatforms.value = (result.platforms || []).map((p: any) => ({ ...p }));
+                            }
+                        } catch (error) {
+                            console.error('[Vue App] 加载技能安装器状态失败:', error);
+                        }
+                    };
+
+                    const saveSkillInstallerSettings = async () => {
+                        try {
+                            const platformsMap: Record<string, boolean> = {};
+                            skillPlatforms.value.forEach(p => { platformsMap[p.key] = p.selected; });
+                            await Editor.Message.request('cocos-mcp-server', 'updateSkillInstallerSettings', skillAutoInstall.value, platformsMap);
+                        } catch (error) {
+                            console.error('[Vue App] 保存技能安装设置失败:', error);
+                        }
+                    };
+
+                    const onToggleAutoInstall = async (val: boolean) => {
+                        skillAutoInstall.value = val;
+                        await saveSkillInstallerSettings();
+                    };
+
+                    const onTogglePlatform = async (key: string, val: boolean) => {
+                        const idx = skillPlatforms.value.findIndex(p => p.key === key);
+                        if (idx !== -1) {
+                            skillPlatforms.value[idx].selected = val;
+                            skillPlatforms.value = [...skillPlatforms.value];
+                            await saveSkillInstallerSettings();
+                        }
+                    };
+
+                    const generateSkills = async () => {
+                        skillGenerating.value = true;
+                        skillMessage.value = '';
+                        try {
+                            const result = await Editor.Message.request('cocos-mcp-server', 'generateSkills');
+                            if (result) {
+                                skillMessageSuccess.value = !!result.success;
+                                skillMessage.value = result.message || (result.success ? '生成成功' : '生成失败');
+                                if (result.lastGenerated) {
+                                    skillLastGenerated.value = result.lastGenerated;
+                                }
+                                // 生成可能触发自动安装，刷新已安装状态
+                                await loadSkillInstallerState();
+                            }
+                        } catch (error: any) {
+                            skillMessageSuccess.value = false;
+                            skillMessage.value = '生成失败: ' + (error && error.message ? error.message : error);
+                        } finally {
+                            skillGenerating.value = false;
+                        }
+                    };
+
+                    const installSkills = async () => {
+                        skillInstalling.value = true;
+                        installMessage.value = '';
+                        try {
+                            const result = await Editor.Message.request('cocos-mcp-server', 'installSkills');
+                            if (result) {
+                                installMessageSuccess.value = !!result.success;
+                                installMessage.value = result.message || (result.success ? '安装成功' : '安装失败');
+                                await loadSkillInstallerState();
+                            }
+                        } catch (error: any) {
+                            installMessageSuccess.value = false;
+                            installMessage.value = '安装失败: ' + (error && error.message ? error.message : error);
+                        } finally {
+                            skillInstalling.value = false;
+                        }
+                    };
                     
 
                     
@@ -454,12 +574,22 @@ module.exports = Editor.Panel.define({
                         availableTools,
                         toolCategories,
                         settingsChanged,
+                        skillPlatforms,
+                        skillAutoInstall,
+                        skillLastGenerated,
+                        skillGenerating,
+                        skillInstalling,
+                        skillMessage,
+                        skillMessageSuccess,
+                        installMessage,
+                        installMessageSuccess,
 
                         // 计算属性
                         statusClass,
                         totalTools,
                         enabledTools,
                         disabledTools,
+                        selectedPlatformCount,
 
                         // 方法
                         switchTab,
@@ -473,7 +603,12 @@ module.exports = Editor.Panel.define({
                         saveChanges,
                         toggleCategoryTools,
                         getToolsByCategory,
-                        getCategoryDisplayName
+                        getCategoryDisplayName,
+                        loadSkillInstallerState,
+                        generateSkills,
+                        installSkills,
+                        onToggleAutoInstall,
+                        onTogglePlatform
                     };
                 },
                 template: readFileSync(join(__dirname, '../../../static/template/vue/mcp-server-app.html'), 'utf-8'),
