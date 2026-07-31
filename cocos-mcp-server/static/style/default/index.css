@@ -87,6 +87,30 @@
     color: #e2e8f0;
 }
 
+/* 品牌头部操作按钮（更新 / 卸载） */
+.brand-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.brand-update-btn {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.brand-uninstall-btn {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.brand-uninstall-btn:hover {
+    background: rgba(239, 68, 68, 0.25);
+}
+
 .pro-link {
     background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
     color: #fff;
@@ -182,6 +206,25 @@ section h3 {
 
 .status-value.status-stopped {
     color: var(--color-danger-fill);
+}
+
+/* 预览地址链接：点击用默认浏览器打开，文字可选中后 Ctrl+C 复制 */
+.preview-link {
+    color: var(--color-primary);
+    cursor: pointer;
+    text-decoration: underline;
+    word-break: break-all;
+    user-select: text;
+}
+
+.preview-link:hover {
+    filter: brightness(1.15);
+}
+
+.preview-link.preview-link-empty {
+    color: var(--color-normal-text-secondary);
+    cursor: default;
+    text-decoration: none;
 }
 
 .server-controls {
@@ -557,14 +600,36 @@ ui-button.secondary:hover {
     margin-top: 10px;
     padding: 8px 10px;
     font-size: 12px;
-    background: var(--color-success-fill);
-    color: var(--color-primary-text);
+    background: var(--color-normal-fill-emphasis);
+    color: var(--color-normal-text);
+    border-left: 3px solid var(--color-success-fill);
     border-radius: 4px;
     word-break: break-all;
 }
 
 .skill-message.skill-error {
-    background: var(--color-danger-fill);
+    color: var(--color-danger-fill);
+    border-left-color: var(--color-danger-fill);
+}
+
+.mcp-options {
+    margin: 8px 0 12px 0;
+}
+
+.mcp-option-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+}
+
+.mcp-option-label {
+    font-size: 13px;
+    color: var(--color-normal-text);
+}
+
+.mcp-config-status {
+    margin: 8px 0 12px 0;
 }
 
 /* 响应式设计 */

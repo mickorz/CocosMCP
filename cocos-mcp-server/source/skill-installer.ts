@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { SkillInstallerSettings, SkillPlatformState, SkillPlatformKey } from './types';
+import { SkillInstallerSettings, SkillPlatformState, SkillPlatformKey, McpConfigSettings } from './types';
 
 /**
  * 技能安装器 SkillInstaller
@@ -78,11 +78,26 @@ const DEFAULT_SETTINGS: SkillInstallerSettings = {
     lastGenerated: ''
 };
 
+// MCP 配置勾选默认值（cocos mcp 默认开，chrome mcp 默认关）
+const DEFAULT_MCP_CONFIG_SETTINGS: McpConfigSettings = {
+    enableCocos: true,
+    enableChrome: false,
+    autoConfig: false
+};
+
+// chrome-devtools-mcp 的 stdio 配置（通过 npx 拉起，用于调试浏览器读取游戏日志）
+const CHROME_MCP_CONFIG = {
+    command: 'npx',
+    args: ['chrome-devtools-mcp@latest']
+};
+
 export class SkillInstaller {
     private settings: SkillInstallerSettings;
+    private mcpConfigSettings: McpConfigSettings;
 
     constructor() {
         this.settings = this.readSettings();
+        this.mcpConfigSettings = this.readMcpConfigSettings();
     }
 
     // ==================== 持久化 ====================
@@ -122,6 +137,38 @@ export class SkillInstaller {
         } catch (e) {
             console.error('[SkillInstaller] 保存设置失败:', e);
             throw e;
+        }
+    }
+
+    // ==================== MCP 配置勾选持久化（settings/mcp-config.json）====================
+    private getMcpConfigSettingsPath(): string {
+        return path.join(Editor.Project.path, 'settings', 'mcp-config.json');
+    }
+
+    private readMcpConfigSettings(): McpConfigSettings {
+        try {
+            this.ensureSettingsDir();
+            const file = this.getMcpConfigSettingsPath();
+            if (fs.existsSync(file)) {
+                const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+                return {
+                    enableCocos: parsed.enableCocos !== false,
+                    enableChrome: !!parsed.enableChrome,
+                    autoConfig: !!parsed.autoConfig
+                };
+            }
+        } catch (e) {
+            console.error('[SkillInstaller] 读取 MCP 配置设置失败:', e);
+        }
+        return { ...DEFAULT_MCP_CONFIG_SETTINGS };
+    }
+
+    private saveMcpConfigSettings(): void {
+        try {
+            this.ensureSettingsDir();
+            fs.writeFileSync(this.getMcpConfigSettingsPath(), JSON.stringify(this.mcpConfigSettings, null, 2));
+        } catch (e) {
+            console.error('[SkillInstaller] 保存 MCP 配置设置失败:', e);
         }
     }
 
@@ -303,6 +350,85 @@ export class SkillInstaller {
         }
     }
 
+    // ==================== 卸载清理 ====================
+    /**
+     * 卸载清理：删除本扩展安装到各平台的 skills，并清理 .mcp.json 里本扩展写入的条目
+     *
+     * 收集的 skill 名 = SKILL_NAMES（13 份自动生成）+ SkillCustomers 源头里的（手写定制），
+     * 遍历 5 平台 skills 目录逐个删除；.mcp.json 只删 cocos-creator / chrome-devtools 两条，
+     * 删完 mcpServers 为空则整个文件删除，其他 MCP 配置保留。
+     */
+    public uninstallAll(): { success: boolean; message: string; removedSkills: string[]; mcpJsonHandled: boolean } {
+        const removedSkills: string[] = [];
+
+        // 1. 收集本扩展安装的所有 skill 名
+        const skillNames = new Set<string>(SKILL_NAMES);
+        const custDir = this.getCustomersDir();
+        if (fs.existsSync(custDir)) {
+            const walk = (dir: string) => {
+                let entries: fs.Dirent[] = [];
+                try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+                for (const e of entries) {
+                    if (!e.isDirectory()) continue;
+                    const full = path.join(dir, e.name);
+                    if (fs.existsSync(path.join(full, 'SKILL.md'))) {
+                        skillNames.add(e.name);
+                    } else {
+                        walk(full);
+                    }
+                }
+            };
+            walk(custDir);
+        }
+
+        // 2. 遍历 5 平台 skills 目录，删除这些 skill 目录
+        for (const key of Object.keys(SKILL_PLATFORMS) as SkillPlatformKey[]) {
+            const skillsDir = path.join(Editor.Project.path, SKILL_PLATFORMS[key].dir);
+            if (!fs.existsSync(skillsDir)) continue;
+            for (const name of skillNames) {
+                const target = path.join(skillsDir, name);
+                if (fs.existsSync(target)) {
+                    try {
+                        fs.rmSync(target, { recursive: true, force: true });
+                        removedSkills.push(`${SKILL_PLATFORMS[key].label}/${name}`);
+                    } catch (e) {
+                        console.error(`[SkillInstaller] 删除 ${target} 失败:`, e);
+                    }
+                }
+            }
+        }
+
+        // 3. 清理 .mcp.json：删 cocos-creator / chrome-devtools 条目，保留其他；空则删文件
+        let mcpJsonHandled = false;
+        const mcpFile = path.join(Editor.Project.path, '.mcp.json');
+        if (fs.existsSync(mcpFile)) {
+            try {
+                const config = JSON.parse(fs.readFileSync(mcpFile, 'utf8'));
+                if (config && config.mcpServers && typeof config.mcpServers === 'object') {
+                    delete config.mcpServers['cocos-creator'];
+                    delete config.mcpServers['chrome-devtools'];
+                    const remaining = Object.keys(config.mcpServers);
+                    if (remaining.length === 0) {
+                        fs.rmSync(mcpFile, { force: true });
+                    } else {
+                        fs.writeFileSync(mcpFile, JSON.stringify(config, null, 2));
+                    }
+                    mcpJsonHandled = true;
+                }
+            } catch (e) {
+                console.error('[SkillInstaller] 清理 .mcp.json 失败:', e);
+            }
+        }
+
+        const tip = mcpJsonHandled ? '，已清理 .mcp.json' : '';
+        return {
+            success: true,
+            message: `已清理 ${removedSkills.length} 个 skill 安装${tip}`,
+            removedSkills,
+            mcpJsonHandled
+        };
+    }
+
     // ==================== 编排 ====================
     /**
      * 生成，并在 autoInstall=true 时自动安装
@@ -316,8 +442,66 @@ export class SkillInstaller {
         return gen;
     }
 
+    /**
+     * 在项目根生成/更新 .mcp.json，让 AI 客户端(Claude Code/Cursor 等)打开本项目时自动连接 cocos-mcp
+     * 智能合并：若 .mcp.json 已存在且含其他 mcpServers，只更新 cocos-creator 条目，保留其余配置
+     * @param port MCP 端口（取自 settings/mcp-server.json）
+     */
+    public generateMcpConfig(port?: number): { success: boolean; message: string; path: string; url: string } {
+        try {
+            const usePort = port || 3001;
+            const mcpFile = path.join(Editor.Project.path, '.mcp.json');
+            const url = `http://127.0.0.1:${usePort}/mcp`;
+            const enableCocos = this.mcpConfigSettings.enableCocos;
+            const enableChrome = this.mcpConfigSettings.enableChrome;
+
+            if (!enableCocos && !enableChrome) {
+                return { success: false, message: '请至少勾选一个 MCP（cocos mcp 或 chrome mcp）', path: mcpFile, url };
+            }
+
+            // 读现有，保留其他 mcpServers（非 cocos-creator / chrome-devtools 的条目）
+            let config: any = { mcpServers: {} };
+            let merged = false;
+            if (fs.existsSync(mcpFile)) {
+                try {
+                    const existing = JSON.parse(fs.readFileSync(mcpFile, 'utf8'));
+                    if (existing && existing.mcpServers && typeof existing.mcpServers === 'object') {
+                        config = existing;
+                        merged = true;
+                    }
+                } catch {
+                    // 损坏的 json 走全新配置
+                }
+            }
+            if (!config.mcpServers || typeof config.mcpServers !== 'object') {
+                config.mcpServers = {};
+            }
+
+            // cocos-creator 与 chrome-devtools 这两个 key 完全由勾选决定：勾选则写，不勾则删
+            if (enableCocos) {
+                config.mcpServers['cocos-creator'] = { type: 'http', url };
+            } else {
+                delete config.mcpServers['cocos-creator'];
+            }
+            if (enableChrome) {
+                config.mcpServers['chrome-devtools'] = { command: CHROME_MCP_CONFIG.command, args: [...CHROME_MCP_CONFIG.args] };
+            } else {
+                delete config.mcpServers['chrome-devtools'];
+            }
+
+            fs.writeFileSync(mcpFile, JSON.stringify(config, null, 2));
+            const enabled: string[] = [];
+            if (enableCocos) enabled.push('cocos-creator');
+            if (enableChrome) enabled.push('chrome-devtools');
+            const tip = merged ? '（已合并，保留其他 MCP 配置）' : '';
+            return { success: true, message: `已生成 .mcp.json，包含: ${enabled.join(', ')}${tip}`, path: mcpFile, url };
+        } catch (e: any) {
+            return { success: false, message: `生成 .mcp.json 失败: ${e && e.message ? e.message : e}`, path: '', url: '' };
+        }
+    }
+
     // ==================== 前端状态 ====================
-    public getState(): { success: boolean; autoInstall: boolean; platforms: SkillPlatformState[]; lastGenerated: string } {
+    public getState(): { success: boolean; autoInstall: boolean; platforms: SkillPlatformState[]; lastGenerated: string; mcpConfig: { exists: boolean; enableCocos: boolean; enableChrome: boolean; autoConfig: boolean } } {
         const platforms: SkillPlatformState[] = (Object.keys(SKILL_PLATFORMS) as SkillPlatformKey[]).map(key => ({
             key,
             label: SKILL_PLATFORMS[key].label,
@@ -328,7 +512,13 @@ export class SkillInstaller {
             success: true,
             autoInstall: this.settings.autoInstall,
             platforms,
-            lastGenerated: this.settings.lastGenerated
+            lastGenerated: this.settings.lastGenerated,
+            mcpConfig: {
+                exists: fs.existsSync(path.join(Editor.Project.path, '.mcp.json')),
+                enableCocos: this.mcpConfigSettings.enableCocos,
+                enableChrome: this.mcpConfigSettings.enableChrome,
+                autoConfig: this.mcpConfigSettings.autoConfig
+            }
         };
     }
 
@@ -340,6 +530,26 @@ export class SkillInstaller {
             }
         });
         this.saveSettings();
+    }
+
+    // 更新 MCP 配置勾选（cocos mcp / chrome mcp / 自动启动）
+    public updateMcpConfigSettings(enableCocos: boolean, enableChrome: boolean, autoConfig: boolean): void {
+        this.mcpConfigSettings.enableCocos = !!enableCocos;
+        this.mcpConfigSettings.enableChrome = !!enableChrome;
+        this.mcpConfigSettings.autoConfig = !!autoConfig;
+        this.saveMcpConfigSettings();
+    }
+
+    // 启动时若开启自动配置，则自动生成 .mcp.json（静默，失败仅记日志）
+    public maybeAutoGenerateMcpConfig(port?: number): boolean {
+        if (this.mcpConfigSettings.autoConfig) {
+            const result = this.generateMcpConfig(port);
+            if (!result.success) {
+                console.log('[SkillInstaller] 自动生成 .mcp.json 跳过:', result.message);
+            }
+            return true;
+        }
+        return false;
     }
 }
 

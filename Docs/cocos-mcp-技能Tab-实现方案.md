@@ -95,6 +95,26 @@ cocos-mcp 的 HTTP 服务（默认端口 3001，绑定 127.0.0.1）提供 Simple
 | Antigravity | `.antigravity/skills/<name>/SKILL.md` |
 | opencode | `.opencode/skills/<name>/SKILL.md` |
 
+### MCP 配置生成（.mcp.json）
+
+服务器 Tab 的「MCP 配置」区块：一键在项目根生成/更新 `.mcp.json`，让 AI 客户端（Claude Code 等）打开本项目时自动连接 cocos-mcp。这样新项目接入时不再需要手写 .mcp.json。放在服务器 Tab 是因为它和端口/连接信息同属"连接配置"，URL 端口直接来自该 Tab 的端口设置。
+
+- 三个勾选项（持久化到 `settings/mcp-config.json`）：
+  - cocos mcp：写入 `cocos-creator`（HTTP，URL 端口取自 `settings/mcp-server.json`，`http://127.0.0.1:{port}/mcp`）
+  - chrome mcp：写入 `chrome-devtools`（stdio，`npx chrome-devtools-mcp@latest`）
+  - 自动启动：勾选后扩展启动时自动生成 .mcp.json（参照服务器 autoStart）
+- 勾选决定内容：勾选的写入，不勾选的从 .mcp.json 删除（cocos-creator / chrome-devtools 两个 key 完全由勾选决定），其他 MCP 配置保留
+- 生成的格式（cocos + chrome 都勾选时）：
+  ```json
+  {
+    "mcpServers": {
+      "cocos-creator": { "type": "http", "url": "http://127.0.0.1:3001/mcp" },
+      "chrome-devtools": { "command": "npx", "args": ["chrome-devtools-mcp@latest"] }
+    }
+  }
+  ```
+- 后端：`SkillInstaller.generateMcpConfig`（按勾选生成）、`updateMcpConfigSettings`（保存勾选）、`maybeAutoGenerateMcpConfig`（启动时自动）；前端按钮 `generateMcpConfig` + 勾选 `onToggleMcpOption`；消息 `generateMcpConfig` / `updateMcpConfigSettings`
+
 ## 五、13 份 SKILL.md 大纲
 
 每份结构：YAML frontmatter（name 与目录名一致 / description）→ 何时使用 → 可用工具 → 典型工作流 → curl 示例 → 注意事项。frontmatter name 遵守 opencode 约束（小写字母 + 单连字符，与目录名一致）。

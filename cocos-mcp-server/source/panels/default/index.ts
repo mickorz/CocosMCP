@@ -60,7 +60,7 @@ module.exports = Editor.Panel.define({
                         zh: {
                             // 品牌区
                             brand_name: 'Cocos MCP',
-                            brand_slogan: '请勿开源',
+                            brand_slogan: '版本v.0.1',
                             pro_upgrade: '升级为PRO版本',
                             pro_tip: '升级到专业版',
                             // 语言
@@ -75,6 +75,18 @@ module.exports = Editor.Panel.define({
                             running: '运行中',
                             stopped: '已停止',
                             connections: '连接数',
+                            preview_url: '预览地址',
+                            preview_not_ready: '预览未就绪',
+                            click_to_open: '点击用默认浏览器打开',
+                            update_btn: '更新',
+                            update_btn_tip: '功能开发中，后续补充',
+                            uninstall_btn: '卸载',
+                            uninstall_btn_tip: '卸载扩展并清理已安装的 skills 与 .mcp.json',
+                            uninstall_confirm: '确定卸载？将清理各平台已安装的 skills 与 .mcp.json，并卸载扩展本身（不可恢复）。',
+                            uninstall_failed: '卸载失败，请查看主进程控制台。',
+                            uninstall_done: '卸载完成',
+                            cancel: '取消',
+                            confirm: '确认卸载',
                             start_server: '启动服务器',
                             stop_server: '停止服务器',
                             server_settings: '服务器设置',
@@ -122,11 +134,19 @@ module.exports = Editor.Panel.define({
                             not_installed: '未安装',
                             install_to_selected: '安装到选中平台',
                             installing: '安装中...',
+                            // MCP 配置
+                            mcp_config: 'MCP 配置',
+                            mcp_config_tip: '勾选要写入 .mcp.json 的 MCP（cocos mcp = cocos-creator HTTP 服务；chrome mcp = chrome-devtools-mcp 调试浏览器）。点生成后在项目根写出，保留其他 MCP 配置。',
+                            mcp_url: 'MCP URL',
+                            mcp_config_installed: '已配置',
+                            mcp_config_not_installed: '未配置',
+                            generate_mcp_config: '生成 .mcp.json',
+                            mcp_auto_config: '自动启动(扩展启动时自动生成 .mcp.json)',
                         },
                         en: {
                             // 品牌区
                             brand_name: 'Cocos MCP',
-                            brand_slogan: 'Open Source Edition',
+                            brand_slogan: 'Version v.0.1',
                             pro_upgrade: 'Upgrade to PRO',
                             pro_tip: 'Upgrade to Pro',
                             // 语言
@@ -141,6 +161,18 @@ module.exports = Editor.Panel.define({
                             running: 'Running',
                             stopped: 'Stopped',
                             connections: 'Connections',
+                            preview_url: 'Preview URL',
+                            preview_not_ready: 'Preview not ready',
+                            click_to_open: 'Click to open in browser',
+                            update_btn: 'Update',
+                            update_btn_tip: 'Feature in development',
+                            uninstall_btn: 'Uninstall',
+                            uninstall_btn_tip: 'Uninstall extension and remove installed skills and .mcp.json',
+                            uninstall_confirm: 'Confirm uninstall? Removes installed skills and .mcp.json across platforms, and uninstalls the extension (irreversible).',
+                            uninstall_failed: 'Uninstall failed, check the main process console.',
+                            uninstall_done: 'Uninstall done',
+                            cancel: 'Cancel',
+                            confirm: 'Confirm Uninstall',
                             start_server: 'Start Server',
                             stop_server: 'Stop Server',
                             server_settings: 'Server Settings',
@@ -187,7 +219,15 @@ module.exports = Editor.Panel.define({
                             installed: 'Installed',
                             not_installed: 'Not installed',
                             install_to_selected: 'Install to selected',
-                            installing: 'Installing...'
+                            installing: 'Installing...',
+                            // MCP config
+                            mcp_config: 'MCP Config',
+                            mcp_config_tip: 'Check MCPs to write into .mcp.json (cocos mcp = cocos-creator HTTP; chrome mcp = chrome-devtools-mcp). Generates in project root, preserves other MCP configs.',
+                            mcp_url: 'MCP URL',
+                            mcp_config_installed: 'Configured',
+                            mcp_config_not_installed: 'Not configured',
+                            generate_mcp_config: 'Generate .mcp.json',
+                            mcp_auto_config: 'Auto start (auto-generate .mcp.json on extension load)'
                         }
                     };
 
@@ -212,6 +252,10 @@ module.exports = Editor.Panel.define({
                     const activeTab = ref('server');
                     const serverRunning = ref(false);
                     const connectedClients = ref(0);
+                    const previewUrl = ref('');
+                    const showUninstallConfirm = ref(false);
+                    const uninstallMsg = ref('');
+                    const uninstallMsgSuccess = ref(true);
                     const httpUrl = ref('');
                     const isProcessing = ref(false);
 
@@ -250,6 +294,15 @@ module.exports = Editor.Panel.define({
                     const installMessage = ref('');
                     const installMessageSuccess = ref(true);
                     const selectedPlatformCount = computed(() => skillPlatforms.value.filter(p => p.selected).length);
+
+                    // MCP 配置数据
+                    const skillMcpConfigExists = ref(false);
+                    const mcpEnableCocos = ref(true);
+                    const mcpEnableChrome = ref(false);
+                    const mcpAutoConfig = ref(false);
+                    const mcpConfigGenerating = ref(false);
+                    const mcpConfigMessage = ref('');
+                    const mcpConfigMessageSuccess = ref(true);
                     
                     // 方法
                     const switchTab = (tabName: string) => {
@@ -300,12 +353,49 @@ module.exports = Editor.Panel.define({
                         }
                     };
                     
-                    const copyUrl = async () => {
+                    // 用默认浏览器打开预览地址（走主进程 shell.openExternal，确保开系统浏览器而非 Electron 窗口）
+                    const openPreviewUrl = async () => {
+                        if (!previewUrl.value) return;
                         try {
-                            await navigator.clipboard.writeText(httpUrl.value);
-                            console.log('[Vue App] URL copied to clipboard');
+                            await Editor.Message.request('cocos-mcp-server', 'open-external-url', previewUrl.value);
                         } catch (error) {
-                            console.error('[Vue App] Failed to copy URL:', error);
+                            console.error('[Vue App] Failed to open preview url:', error);
+                        }
+                    };
+
+                    // 用默认浏览器打开 HTTP URL（同 openPreviewUrl，走主进程 shell.openExternal）
+                    const openHttpUrl = async () => {
+                        if (!httpUrl.value) return;
+                        try {
+                            await Editor.Message.request('cocos-mcp-server', 'open-external-url', httpUrl.value);
+                        } catch (error) {
+                            console.error('[Vue App] Failed to open http url:', error);
+                        }
+                    };
+
+                    // 卸载扩展：打开确认弹窗（不用 window.confirm，Cocos 面板会拦截原生对话框）
+                    const uninstallExtension = () => {
+                        uninstallMsg.value = '';
+                        showUninstallConfirm.value = true;
+                    };
+
+                    const cancelUninstall = () => {
+                        showUninstallConfirm.value = false;
+                    };
+
+                    // 确认卸载：调后端清理 skills/.mcp.json + 卸载扩展，结果显示在顶部提示条
+                    const confirmUninstall = async () => {
+                        showUninstallConfirm.value = false;
+                        try {
+                            const result = await Editor.Message.request('cocos-mcp-server', 'uninstall');
+                            if (result) {
+                                uninstallMsgSuccess.value = !!result.success;
+                                uninstallMsg.value = result.message || (result.success ? t('uninstall_done') : t('uninstall_failed'));
+                            }
+                        } catch (error) {
+                            console.error('[Vue App] Failed to uninstall:', error);
+                            uninstallMsgSuccess.value = false;
+                            uninstallMsg.value = t('uninstall_failed');
                         }
                     };
                     
@@ -435,6 +525,12 @@ module.exports = Editor.Panel.define({
                                 skillAutoInstall.value = !!result.autoInstall;
                                 skillLastGenerated.value = result.lastGenerated || '';
                                 skillPlatforms.value = (result.platforms || []).map((p: any) => ({ ...p }));
+                                if (result.mcpConfig) {
+                                    skillMcpConfigExists.value = !!result.mcpConfig.exists;
+                                    mcpEnableCocos.value = !!result.mcpConfig.enableCocos;
+                                    mcpEnableChrome.value = !!result.mcpConfig.enableChrome;
+                                    mcpAutoConfig.value = !!result.mcpConfig.autoConfig;
+                                }
                             }
                         } catch (error) {
                             console.error('[Vue App] 加载技能安装器状态失败:', error);
@@ -504,6 +600,39 @@ module.exports = Editor.Panel.define({
                             skillInstalling.value = false;
                         }
                     };
+
+                    const generateMcpConfig = async () => {
+                        mcpConfigGenerating.value = true;
+                        mcpConfigMessage.value = '';
+                        try {
+                            const result = await Editor.Message.request('cocos-mcp-server', 'generateMcpConfig');
+                            if (result) {
+                                mcpConfigMessageSuccess.value = !!result.success;
+                                mcpConfigMessage.value = result.message || (result.success ? '生成成功' : '生成失败');
+                                await loadSkillInstallerState();
+                            }
+                        } catch (error: any) {
+                            mcpConfigMessageSuccess.value = false;
+                            mcpConfigMessage.value = '生成失败: ' + (error && error.message ? error.message : error);
+                        } finally {
+                            mcpConfigGenerating.value = false;
+                        }
+                    };
+
+                    const onToggleMcpOption = async (key: 'cocos' | 'chrome' | 'auto', val: boolean) => {
+                        if (key === 'cocos') {
+                            mcpEnableCocos.value = val;
+                        } else if (key === 'chrome') {
+                            mcpEnableChrome.value = val;
+                        } else {
+                            mcpAutoConfig.value = val;
+                        }
+                        try {
+                            await Editor.Message.request('cocos-mcp-server', 'updateMcpConfigSettings', mcpEnableCocos.value, mcpEnableChrome.value, mcpAutoConfig.value);
+                        } catch (error) {
+                            console.error('[Vue App] 保存 MCP 配置选项失败:', error);
+                        }
+                    };
                     
 
                     
@@ -520,6 +649,9 @@ module.exports = Editor.Panel.define({
                     onMounted(async () => {
                         // 加载工具管理器状态
                         await loadToolManagerState();
+
+                        // 加载技能安装器状态（含 MCP 配置是否存在，供服务器 Tab 的 MCP 配置区块显示）
+                        await loadSkillInstallerState();
                         
                         // 从服务器状态获取设置信息
                         try {
@@ -549,6 +681,7 @@ module.exports = Editor.Panel.define({
                                 if (result) {
                                     serverRunning.value = result.running;
                                     connectedClients.value = result.clients || 0;
+                                    previewUrl.value = result.previewUrl || '';
                                     httpUrl.value = result.running ? `http://localhost:${result.port}` : '';
                                     isProcessing.value = false;
                                 }
@@ -568,6 +701,7 @@ module.exports = Editor.Panel.define({
                         activeTab,
                         serverRunning,
                         connectedClients,
+                        previewUrl,
                         httpUrl,
                         isProcessing,
                         settings,
@@ -583,6 +717,13 @@ module.exports = Editor.Panel.define({
                         skillMessageSuccess,
                         installMessage,
                         installMessageSuccess,
+                        skillMcpConfigExists,
+                        mcpEnableCocos,
+                        mcpEnableChrome,
+                        mcpAutoConfig,
+                        mcpConfigGenerating,
+                        mcpConfigMessage,
+                        mcpConfigMessageSuccess,
 
                         // 计算属性
                         statusClass,
@@ -595,7 +736,14 @@ module.exports = Editor.Panel.define({
                         switchTab,
                         toggleServer,
                         saveSettings,
-                        copyUrl,
+                        openPreviewUrl,
+                        openHttpUrl,
+                        uninstallExtension,
+                        cancelUninstall,
+                        confirmUninstall,
+                        showUninstallConfirm,
+                        uninstallMsg,
+                        uninstallMsgSuccess,
                         loadToolManagerState,
                         updateToolStatus,
                         selectAllTools,
@@ -608,7 +756,9 @@ module.exports = Editor.Panel.define({
                         generateSkills,
                         installSkills,
                         onToggleAutoInstall,
-                        onTogglePlatform
+                        onTogglePlatform,
+                        generateMcpConfig,
+                        onToggleMcpOption
                     };
                 },
                 template: readFileSync(join(__dirname, '../../../static/template/vue/mcp-server-app.html'), 'utf-8'),

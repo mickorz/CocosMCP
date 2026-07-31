@@ -19,12 +19,27 @@ import { ReferenceImageTools } from './tools/reference-image-tools';
 import { AssetAdvancedTools } from './tools/asset-advanced-tools';
 import { ValidationTools } from './tools/validation-tools';
 
+/**
+ * MCPServer MCP 协议服务器（HTTP，绑定 127.0.0.1）
+ *
+ * 启动与预览缓存流程：
+ *   start()
+ *     ├─ http.createServer listen(127.0.0.1:port)
+ *     ├─ setupTools() 装配工具列表
+ *     ├─ ensurePreviewStarted()
+ *     │     ├─ preview:query-preview-url 取真实预览地址
+ *     │     └─ 规范成 localhost 缓存到 previewUrl（多工程端口递增时拿真实端口）
+ *     └─ ready for connections
+ *   getStatus() → { running, port, previewUrl }
+ */
 export class MCPServer {
     private settings: MCPServerSettings;
     private httpServer: http.Server | null = null;
     private tools: Record<string, any> = {};
     private toolsList: ToolDefinition[] = [];
     private enabledTools: any[] = []; // 存储启用的工具列表
+    // Cocos 编辑器预览服务地址（localhost 形式，启动时查询并缓存）
+    private previewUrl: string = '';
 
     constructor(settings: MCPServerSettings) {
         this.settings = settings;
@@ -92,6 +107,12 @@ export class MCPServer {
 
             this.setupTools();
             console.log('[MCPServer] 🚀 MCP Server is ready for connections');
+
+            // 启动时查询预览服务地址并缓存：保证后台预览在跑，并把真实端口（多工程时为 7457 等）缓存到 previewUrl。
+            // 异步执行，失败不阻塞服务器启动；编辑器刚加载时预览可能尚未就绪，getStatus 面板轮询时会再查补上。
+            this.ensurePreviewStarted().catch(e => {
+                console.log('[MCPServer] ensurePreviewStarted skipped:', e && e.message ? e.message : e);
+            });
         } catch (error) {
             console.error('[MCPServer] ❌ Failed to start server:', error);
             throw error;
@@ -301,8 +322,48 @@ export class MCPServer {
     public getStatus(): ServerStatus {
         return {
             running: !!this.httpServer,
-            port: this.settings.port
+            port: this.settings.port,
+            previewUrl: this.previewUrl
         };
+    }
+
+    /**
+     * 查询 Cocos 编辑器预览服务的真实地址（localhost 形式）并缓存
+     *
+     * 多工程同时开时，预览端口会自动递增（7456/7457/...），preview:query-preview-url
+     * 返回的就是本编辑器进程自己预览服务的真实端口。启动时调一次既能确认后台预览在跑、
+     * 又能把真实地址缓存到 previewUrl，供面板状态显示与 AI 查询。失败/空不阻塞，仅回退默认值。
+     *
+     * 注意：端口解析逻辑与 ProjectTools.runProject 同源（都规范成 localhost，避免局域网 IP 换环境失效）。
+     */
+    public async ensurePreviewStarted(): Promise<string> {
+        try {
+            let url = '';
+            try {
+                url = await Editor.Message.request('preview', 'query-preview-url');
+            } catch (e) {
+                // query-preview-url 不可用（编辑器预览尚未就绪等），回退默认端口
+            }
+            if (!url) {
+                url = 'http://localhost:7456';
+            }
+            // 规范成 localhost：query-preview-url 可能返回真实局域网 IP，换环境会失效
+            let localhostUrl = 'http://localhost:7456';
+            const portMatch = url.match(/:(\d{2,5})(?:\/|$)/);
+            if (portMatch) {
+                localhostUrl = `http://localhost:${portMatch[1]}`;
+            }
+            this.previewUrl = localhostUrl;
+            console.log(`[MCPServer] Preview URL cached: ${this.previewUrl}`);
+            return this.previewUrl;
+        } catch (e: any) {
+            console.log('[MCPServer] Query preview url failed:', e && e.message ? e.message : e);
+            return this.previewUrl;
+        }
+    }
+
+    public getPreviewUrl(): string {
+        return this.previewUrl;
     }
 
     private async handleSimpleAPIRequest(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<void> {

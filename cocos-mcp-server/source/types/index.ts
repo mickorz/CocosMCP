@@ -9,6 +9,8 @@ export interface MCPServerSettings {
 export interface ServerStatus {
     running: boolean;
     port: number;
+    // Cocos 编辑器预览服务的真实地址（localhost 形式，多工程时端口会递增如 7456/7457）
+    previewUrl?: string;
 }
 
 export interface ToolDefinition {
@@ -162,4 +164,10 @@ export interface SkillPlatformState {
     label: string;
     selected: boolean;
     installed: boolean;
+}
+
+export interface McpConfigSettings {
+    enableCocos: boolean;
+    enableChrome: boolean;
+    autoConfig: boolean;
 }

@@ -13,7 +13,7 @@ export class ServerTools implements ToolExecutor {
                         action: {
                             type: 'string',
                             enum: ['get_ip_list', 'get_sorted_ip_list', 'get_port', 'get_comprehensive_status'],
-                            description: 'Information query: "get_ip_list" = all available network IP addresses | "get_sorted_ip_list" = IPs sorted by priority/type | "get_port" = current editor server port number | "get_comprehensive_status" = complete server status with IPs, port, and system info'
+                            description: 'Information query: "get_ip_list" = all available network IP addresses | "get_sorted_ip_list" = IPs sorted by priority/type | "get_port" = current editor server port number | "get_comprehensive_status" = complete server status with IPs, port, preview URL (game preview address, multi-project port auto-increments), and system info'
                         }
                     },
                     required: ['action']
@@ -106,9 +106,10 @@ export class ServerTools implements ToolExecutor {
 
     private async getServerStatus(): Promise<ToolResponse> {
         try {
-            const [ipListResult, portResult] = await Promise.allSettled([
+            const [ipListResult, portResult, previewResult] = await Promise.allSettled([
                 this.queryServerIPList(),
-                this.queryServerPort()
+                this.queryServerPort(),
+                Editor.Message.request('preview', 'query-preview-url')
             ]);
 
             const status: any = {
@@ -130,6 +131,15 @@ export class ServerTools implements ToolExecutor {
             } else {
                 status.port = null;
                 status.portError = portResult.status === 'rejected' ? portResult.reason : portResult.value.error;
+            }
+
+            // 预览服务地址：多工程同时开时端口会递增（7456/7457/...），AI 调试浏览器（chrome-devtools）
+            // 导航必须用本工程真实端口。规范成 localhost 形式，避免局域网 IP 换环境失效。
+            if (previewResult.status === 'fulfilled' && previewResult.value) {
+                const portMatch = String(previewResult.value).match(/:(\d{2,5})(?:\/|$)/);
+                status.previewUrl = portMatch ? `http://localhost:${portMatch[1]}` : 'http://localhost:7456';
+            } else {
+                status.previewUrl = '';
             }
 
             status.editorVersion = (Editor as any).versions?.cocos || 'Unknown';

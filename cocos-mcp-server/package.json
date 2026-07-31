@@ -41,8 +41,8 @@
     "contributions": {
                 "menu": [
             {
-                "path": "i18n:menu.extension/Cocos MCP Server",
-                "label": "i18n:cocos-mcp-server.open_panel",
+                "path": "i18n:menu.extension",
+                "label": "Cocos MCP Server",
                 "message": "open-panel"
             }
         ],
@@ -155,6 +155,26 @@
             "installSkills": {
                 "methods": [
                     "installSkills"
+                ]
+            },
+            "generateMcpConfig": {
+                "methods": [
+                    "generateMcpConfig"
+                ]
+            },
+            "updateMcpConfigSettings": {
+                "methods": [
+                    "updateMcpConfigSettings"
+                ]
+            },
+            "open-external-url": {
+                "methods": [
+                    "openExternalUrl"
+                ]
+            },
+            "uninstall": {
+                "methods": [
+                    "uninstall"
                 ]
             }
         },

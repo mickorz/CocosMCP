@@ -9,12 +9,16 @@
             </div>
         </div>
         <div class="brand-actions">
+            <ui-button class="brand-btn brand-update-btn" disabled :title="t('update_btn_tip')">{{ t('update_btn') }}</ui-button>
+            <ui-button class="brand-btn brand-uninstall-btn" @click="uninstallExtension" :title="t('uninstall_btn_tip')">{{ t('uninstall_btn') }}</ui-button>
             <select class="language-selector" :value="currentLanguage" @change="switchLanguage($event.target.value)">
                 <option value="zh">中文</option>
                 <option value="en">English</option>
             </select>
         </div>
     </div>
+
+    <div v-if="uninstallMsg" class="skill-message" :class="{ 'skill-error': !uninstallMsgSuccess }">{{ uninstallMsg }}</div>
 
     <!-- 选项卡导航 -->
     <div class="tab-navigation">
@@ -41,6 +45,10 @@
                 <ui-prop v-if="serverRunning">
                     <ui-label slot="label">{{ t('connections') }}</ui-label>
                     <ui-label slot="content">{{ connectedClients }}</ui-label>
+                </ui-prop>
+                <ui-prop v-if="serverRunning">
+                    <ui-label slot="label">{{ t('preview_url') }}</ui-label>
+                    <a slot="content" class="preview-link" :class="{ 'preview-link-empty': !previewUrl }" href="javascript:void(0)" @click.prevent="openPreviewUrl" :title="previewUrl ? t('click_to_open') : ''">{{ previewUrl || t('preview_not_ready') }}</a>
                 </ui-prop>
             </div>
         </section>
@@ -73,14 +81,46 @@
             </ui-prop>
         </section>
 
+        <section class="mcp-config-section">
+            <h3>{{ t('mcp_config') }}</h3>
+            <div class="skill-gen-tip">{{ t('mcp_config_tip') }}</div>
+            <div class="mcp-options">
+                <div class="mcp-option-item">
+                    <ui-checkbox :value="mcpEnableCocos" @change="onToggleMcpOption('cocos', $event.target.checked)"></ui-checkbox>
+                    <span class="mcp-option-label">cocos mcp</span>
+                </div>
+                <div class="mcp-option-item">
+                    <ui-checkbox :value="mcpEnableChrome" @change="onToggleMcpOption('chrome', $event.target.checked)"></ui-checkbox>
+                    <span class="mcp-option-label">chrome mcp</span>
+                </div>
+                <div class="mcp-option-item">
+                    <ui-checkbox :value="mcpAutoConfig" @change="onToggleMcpOption('auto', $event.target.checked)"></ui-checkbox>
+                    <span class="mcp-option-label">{{ t('mcp_auto_config') }}</span>
+                </div>
+            </div>
+            <ui-prop>
+                <ui-label slot="label">{{ t('mcp_url') }}</ui-label>
+                <ui-label slot="content">http://127.0.0.1:{{ settings.port }}/mcp</ui-label>
+            </ui-prop>
+            <div class="mcp-config-status">
+                <span class="skill-platform-status" :class="{ installed: skillMcpConfigExists }">
+                    {{ skillMcpConfigExists ? t('mcp_config_installed') : t('mcp_config_not_installed') }}
+                </span>
+            </div>
+            <div class="skill-gen-actions">
+                <ui-button @click="generateMcpConfig" :disabled="mcpConfigGenerating" class="primary">
+                    {{ mcpConfigGenerating ? t('generating') : t('generate_mcp_config') }}
+                </ui-button>
+            </div>
+            <div v-if="mcpConfigMessage" class="skill-message" :class="{ 'skill-error': !mcpConfigMessageSuccess }">{{ mcpConfigMessage }}</div>
+        </section>
+
         <section class="server-info" v-if="serverRunning">
             <h3>{{ t('connection_info') }}</h3>
             <div class="connection-details">
                 <ui-prop>
                     <ui-label slot="label">{{ t('http_url') }}</ui-label>
-                    <ui-input slot="content" :value="httpUrl" readonly>
-                        <ui-button slot="suffix" @click="copyUrl">{{ t('copy') }}</ui-button>
-                    </ui-input>
+                    <a slot="content" class="preview-link" href="javascript:void(0)" @click.prevent="openHttpUrl" :title="httpUrl ? t('click_to_open') : ''">{{ httpUrl }}</a>
                 </ui-prop>
             </div>
         </section>
@@ -182,5 +222,21 @@
             </div>
 
         </section>
+    </div>
+
+    <!-- 卸载确认弹窗 -->
+    <div v-if="showUninstallConfirm" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>{{ t('uninstall_btn') }}</h3>
+            </div>
+            <div class="modal-body">
+                <p>{{ t('uninstall_confirm') }}</p>
+            </div>
+            <div class="modal-footer">
+                <ui-button @click="cancelUninstall" class="secondary">{{ t('cancel') }}</ui-button>
+                <ui-button @click="confirmUninstall" class="brand-uninstall-btn">{{ t('confirm') }}</ui-button>
+            </div>
+        </div>
     </div>
 </div>

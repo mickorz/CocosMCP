@@ -68,6 +68,23 @@ flowchart LR
 - **扩展加载**：`cocos-mcp-server` 需构建后在 Cocos Creator 扩展管理器中加载（入口 `dist/main.js`），接入步骤参考 `cocos-mcp-server/README.md`。
 - **忽略规则分层**：根目录 `.gitignore` 负责根级别（OS / IDE / 日志）；`CocosMCP/.gitignore`（Cocos 标准模板）忽略 `library/ temp/ build/ profiles/ local/ node_modules/`。提交前确认未把 `library/`、`temp/` 等大目录带入。
 
+## 面板 URL 显示约定
+
+cocos-mcp-server 面板里凡是展示 URL（预览地址、HTTP URL 等）的地方，**统一用可点击链接，不用按钮**：
+
+- 展示形式：`<a class="preview-link">`（样式见 `static/style/default/index.css` 的 `.preview-link`），主色 + 下划线 + `user-select: text`。
+- 单击 → 用默认系统浏览器打开：`@click.prevent` 调后端 `open-external-url` 消息（`source/main.ts` 的 `openExternalUrl`，走主进程 `electron.shell.openExternal`，拿不到时用 `start` / `open` / `xdg-open` 兜底）。**不要用前端 `window.open`**——Electron 渲染进程里它会开 Electron 窗口而非系统浏览器，不可靠。
+- 复制 → 直接选中链接文字 Ctrl+C（`user-select: text`），**不单独做复制按钮**。
+- 后端打开 URL 的统一入口是 `open-external-url` 消息（`package.json` 的 `contributions.messages` 已声明），新增 URL 展示处复用 `openPreviewUrl` / `openHttpUrl` 同款写法即可。
+
+## 面板对话框/确认约定
+
+cocos-mcp-server 面板里需要用户确认或提示时（如卸载确认、操作结果），**不要用 `window.confirm` / `window.alert` / `window.prompt`**：
+
+- Cocos 面板运行在 Electron 渲染进程，原生对话框会被拦截——`window.confirm` 不弹窗且直接返回 false，会让点击"没反应"、逻辑提前 return 中断（卸载按钮就是这个坑）。
+- 主进程的 `Editor.Dialog`（基于 electron dialog）在面板渲染进程拿不到。
+- 一律改用 Vue 自带 UI：确认用 modal 弹窗（样式见 `.modal` / `.modal-content` / `.modal-header` / `.modal-body` / `.modal-footer`），结果提示用顶部提示条（复用 `.skill-message` 样式 + 成功/错误态 class）。参考卸载流程的 `showUninstallConfirm` + `confirmUninstall` + `cancelUninstall` 写法。
+
 ## 扩展接入约定
 
 `cocos-mcp-server` 源码在仓库根（git 跟踪），接入 Cocos 项目的方式按场景区分：

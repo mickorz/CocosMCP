@@ -220,6 +220,61 @@ export const methods: { [key: string]: (...any: any) => any } = {
 
     async installSkills() {
         return skillInstaller.installSkills();
+    },
+
+    async generateMcpConfig() {
+        // 用当前 MCP 端口生成 .mcp.json（直接读持久化配置，确保用最新保存的端口）
+        const port = readSettings().port;
+        return skillInstaller.generateMcpConfig(port);
+    },
+
+    async updateMcpConfigSettings(enableCocos: boolean, enableChrome: boolean, autoConfig: boolean) {
+        try {
+            skillInstaller.updateMcpConfigSettings(enableCocos, enableChrome, autoConfig);
+            return { success: true };
+        } catch (error: any) {
+            throw new Error(`保存 MCP 配置选项失败: ${error.message}`);
+        }
+    },
+
+    /**
+     * @en Open an external URL in the default system browser
+     * @zh 用默认系统浏览器打开外部 URL（面板按钮点击预览地址时调用）
+     */
+    async openExternalUrl(url: string) {
+        try {
+            const electron: any = require('electron');
+            const shell = electron && electron.shell;
+            if (shell && typeof shell.openExternal === 'function') {
+                await shell.openExternal(url);
+                return { success: true };
+            }
+            // 主进程拿不到 electron.shell 时用系统命令兜底
+            const { execSync } = require('child_process');
+            const cmd = process.platform === 'win32' ? `start "" "${url}"`
+                : process.platform === 'darwin' ? `open "${url}"`
+                : `xdg-open "${url}"`;
+            execSync(cmd, { stdio: 'ignore' });
+            return { success: true };
+        } catch (e: any) {
+            console.error('[MCP插件] 打开外部 URL 失败:', e);
+            return { success: false, error: e && e.message ? e.message : String(e) };
+        }
+    },
+
+    /**
+     * @en Uninstall: clean installed skills + .mcp.json, then remove the extension
+     * @zh 卸载：清理已安装的 skills 与 .mcp.json，再卸载扩展本身
+     */
+    async uninstall() {
+        const result = skillInstaller.uninstallAll();
+        // 卸载扩展本身：best-effort 触发编辑器 uninstall-extension 消息，失败仅记日志（清理已完成）
+        try {
+            await Editor.Message.request('extension', 'uninstall-extension', 'cocos-mcp-server');
+        } catch (e: any) {
+            console.log('[MCP插件] 扩展卸载消息:', e && e.message ? e.message : e);
+        }
+        return result;
     }
 };
 
@@ -250,6 +305,9 @@ export function load() {
             console.error('Failed to auto-start MCP server:', err);
         });
     }
+
+    // 若 MCP 配置开启了自动生成，启动时自动写 .mcp.json
+    skillInstaller.maybeAutoGenerateMcpConfig(settings.port);
 }
 
 /**

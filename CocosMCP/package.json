@@ -1,7 +1,9 @@
 {
-  "name": "CocosMCP",
-  "uuid": "92b516ac-64d8-4d1d-9c6a-522df5497f34",
-  "creator": {
-    "version": "3.7.3"
-  }
+    "name": "CocosMCP",
+    "type": "3d",
+    "version": "unknow",
+    "uuid": "92b516ac-64d8-4d1d-9c6a-522df5497f34",
+    "creator": {
+        "version": "3.7.3"
+    }
 }

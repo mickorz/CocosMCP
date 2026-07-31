@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "skipLibCheck": true
+  },
+  "exclude": [
+    "extensions/**",
+    "library/**",
+    "temp/**",
+    "build/**",
+    "profiles/**",
+    "node_modules/**"
+  ]
+}
