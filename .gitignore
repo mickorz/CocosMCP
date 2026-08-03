@@ -1,60 +1,92 @@
-
-#///////////////////////////
-# 操作系统生成文件
-#///////////////////////////
-.DS_Store
-Thumbs.db
-desktop.ini
-ehthumbs.db
-$RECYCLE.BIN/
-
-#///////////////////////////
-# IDE / 编辑器
-#///////////////////////////
-.vscode/
-.idea/
-*.swp
-*.swo
-
-#///////////////////////////
-# Claude Code 本地配置（含个人 Obsidian 路径，不进 git）
-#///////////////////////////
-.claude/settings.local.json
-
-#///////////////////////////
-# Cocos 项目扩展目录
-# cocos-mcp-server 通过 junction 引用仓库根那份，此处不重复跟踪
-#///////////////////////////
-CocosMCP/extensions/
-
-#///////////////////////////
-# Node / 日志
-#///////////////////////////
+# Dependencies
 node_modules/
+
+# Build output
+dist/
+
+build/
+build-secure/
+release/
+release-build/
+release-production/
+release-ultra-secure/
+releases/*.zip
+
+# Security files (sensitive)
+.license
+.license_*
+*.license
+keys/
+*.key
+*.pem
+private/
+
+# Development files
+native-module/
+webpack.config.js
+package.dev.json
+.dev-only
+
+# Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-#///////////////////////////
-# 说明：Cocos Creator 项目内部忽略项
-# library temp build profiles 等已由
-# CocosMCP/CocosMCP/.gitignore 覆盖
-# 此处仅作仓库根级别补充
-#///////////////////////////
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-#///////////////////////////
-# Cocos MCP 服务器运行时配置（本机状态，不进 git）
-# mcp-server.json 为面板端口设置，tool-manager.json 为工具启用状态
-#///////////////////////////
-CocosMCP/settings/mcp-server.json
-CocosMCP/settings/tool-manager.json
-CocosMCP/settings/skill-installer.json
-CocosMCP/.creator/
+# IDE
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
 
-#///////////////////////////
-# AI 客户端目录（技能 Tab 安装产物 + 各客户端本地数据，不进 git）
-#///////////////////////////
-CocosMCP/.claude/
-CocosMCP/.opencode/
-CocosMCP/.gemini/
-CocosMCP/.codex/
-CocosMCP/.antigravity/
+# Temporary files
+*.tmp
+*.temp
+.cache/
+tmp/
+temp/
+
+# Config files with sensitive data
+config.local.json
+settings.local.json
+.env
+.env.local
+
+# Test files
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+test-*.js
+test-*.ts
+debug-*.js
+comprehensive-test.js
+source/test/
+dist/test/
+source/examples/
+dist/examples/
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# 技能安装器生成产物与用户手写定制技能（运行时生成，不进 git）
+CodeAgents/
