@@ -157,6 +157,11 @@
                     "installSkills"
                 ]
             },
+            "uninstall-platforms": {
+                "methods": [
+                    "uninstallPlatforms"
+                ]
+            },
             "generateMcpConfig": {
                 "methods": [
                     "generateMcpConfig"

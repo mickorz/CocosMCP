@@ -168,6 +168,9 @@
                 <ui-button @click="installSkills" :disabled="skillInstalling" class="primary">
                     {{ skillInstalling ? t('installing') : t('install_to_selected') }} ({{ selectedPlatformCount }})
                 </ui-button>
+                <ui-button @click="uninstallPlatforms" :disabled="skillUninstalling" class="secondary">
+                    {{ skillUninstalling ? t('uninstalling') : t('uninstall_selected') }} ({{ selectedPlatformCount }})
+                </ui-button>
             </div>
             <div v-if="installMessage" class="skill-message" :class="{ 'skill-error': !installMessageSuccess }">{{ installMessage }}</div>
         </section>

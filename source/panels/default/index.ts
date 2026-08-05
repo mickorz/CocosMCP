@@ -87,6 +87,8 @@ module.exports = Editor.Panel.define({
                             uninstall_done: '卸载完成',
                             cancel: '取消',
                             confirm: '确认卸载',
+                            uninstall_selected: '卸载选中平台',
+                            uninstalling: '卸载中',
                             start_server: '启动服务器',
                             stop_server: '停止服务器',
                             server_settings: '服务器设置',
@@ -173,6 +175,8 @@ module.exports = Editor.Panel.define({
                             uninstall_done: 'Uninstall done',
                             cancel: 'Cancel',
                             confirm: 'Confirm Uninstall',
+                            uninstall_selected: 'Uninstall Selected',
+                            uninstalling: 'Uninstalling',
                             start_server: 'Start Server',
                             stop_server: 'Stop Server',
                             server_settings: 'Server Settings',
@@ -289,6 +293,7 @@ module.exports = Editor.Panel.define({
                     const skillLastGenerated = ref('');
                     const skillGenerating = ref(false);
                     const skillInstalling = ref(false);
+                    const skillUninstalling = ref(false);
                     const skillMessage = ref('');
                     const skillMessageSuccess = ref(true);
                     const installMessage = ref('');
@@ -601,6 +606,25 @@ module.exports = Editor.Panel.define({
                         }
                     };
 
+                    // 卸载勾选平台的 skills（不动 .mcp.json、不卸载扩展），完事后刷新各平台已装状态
+                    const uninstallPlatforms = async () => {
+                        skillUninstalling.value = true;
+                        installMessage.value = '';
+                        try {
+                            const result = await Editor.Message.request('cocos-mcp-server', 'uninstall-platforms');
+                            if (result) {
+                                installMessageSuccess.value = !!result.success;
+                                installMessage.value = result.message || (result.success ? '卸载成功' : '卸载失败');
+                                await loadSkillInstallerState();
+                            }
+                        } catch (error: any) {
+                            installMessageSuccess.value = false;
+                            installMessage.value = '卸载失败: ' + (error && error.message ? error.message : error);
+                        } finally {
+                            skillUninstalling.value = false;
+                        }
+                    };
+
                     const generateMcpConfig = async () => {
                         mcpConfigGenerating.value = true;
                         mcpConfigMessage.value = '';
@@ -713,6 +737,7 @@ module.exports = Editor.Panel.define({
                         skillLastGenerated,
                         skillGenerating,
                         skillInstalling,
+                        skillUninstalling,
                         skillMessage,
                         skillMessageSuccess,
                         installMessage,
@@ -755,6 +780,7 @@ module.exports = Editor.Panel.define({
                         loadSkillInstallerState,
                         generateSkills,
                         installSkills,
+                        uninstallPlatforms,
                         onToggleAutoInstall,
                         onTogglePlatform,
                         generateMcpConfig,

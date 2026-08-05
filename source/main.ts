@@ -222,6 +222,14 @@ export const methods: { [key: string]: (...any: any) => any } = {
         return skillInstaller.installSkills();
     },
 
+    /**
+     * @en Uninstall skills from selected platforms only
+     * @zh 仅卸载勾选平台的 skills（不动 .mcp.json、不卸载扩展）
+     */
+    async uninstallPlatforms() {
+        return skillInstaller.uninstallPlatforms();
+    },
+
     async generateMcpConfig() {
         // 用当前 MCP 端口生成 .mcp.json（直接读持久化配置，确保用最新保存的端口）
         const port = readSettings().port;

@@ -344,7 +344,8 @@ export class SkillInstaller {
             }
 
             const labels = selected.map(k => SKILL_PLATFORMS[k].label).join('、');
-            return { success: true, message: `已安装 ${sources.length} 份技能到 ${selected.length} 个平台：${labels}`, platforms: selected, skillCount: sources.length };
+            const sourceNames = sources.map(s => path.basename(s)).join(', ');
+            return { success: true, message: `已安装 ${sources.length} 份技能到 ${selected.length} 个平台：${labels}（${sourceNames}）`, platforms: selected, skillCount: sources.length };
         } catch (e: any) {
             return { success: false, message: `安装失败: ${e && e.message ? e.message : e}`, platforms: [], skillCount: 0 };
         }
@@ -427,6 +428,58 @@ export class SkillInstaller {
             removedSkills,
             mcpJsonHandled
         };
+    }
+
+    /**
+     * 卸载选中平台：只删除当前勾选平台的本扩展 skills，不动 .mcp.json、不卸载扩展本身
+     * 与 uninstallAll 的区别：仅限 settings.platforms 勾选的平台，且不清理 .mcp.json、不触发 uninstall-extension
+     */
+    public uninstallPlatforms(): { success: boolean; message: string; platforms: SkillPlatformKey[]; removedCount: number } {
+        const selected = (Object.keys(SKILL_PLATFORMS) as SkillPlatformKey[]).filter(k => this.settings.platforms[k]);
+        if (selected.length === 0) {
+            return { success: false, message: '未勾选任何平台', platforms: [], removedCount: 0 };
+        }
+
+        // 收集本扩展安装的 skill 名（SKILL_NAMES + SkillCustomers 源头）
+        const skillNames = new Set<string>(SKILL_NAMES);
+        const custDir = this.getCustomersDir();
+        if (fs.existsSync(custDir)) {
+            const walk = (dir: string) => {
+                let entries: fs.Dirent[] = [];
+                try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+                for (const e of entries) {
+                    if (!e.isDirectory()) continue;
+                    const full = path.join(dir, e.name);
+                    if (fs.existsSync(path.join(full, 'SKILL.md'))) {
+                        skillNames.add(e.name);
+                    } else {
+                        walk(full);
+                    }
+                }
+            };
+            walk(custDir);
+        }
+
+        // 只删勾选平台的这些 skill
+        let removedCount = 0;
+        for (const key of selected) {
+            const skillsDir = path.join(Editor.Project.path, SKILL_PLATFORMS[key].dir);
+            if (!fs.existsSync(skillsDir)) continue;
+            for (const name of skillNames) {
+                const target = path.join(skillsDir, name);
+                if (fs.existsSync(target)) {
+                    try {
+                        fs.rmSync(target, { recursive: true, force: true });
+                        removedCount++;
+                    } catch (e) {
+                        console.error(`[SkillInstaller] 删除 ${target} 失败:`, e);
+                    }
+                }
+            }
+        }
+
+        const labels = selected.map(k => SKILL_PLATFORMS[k].label).join('、');
+        return { success: true, message: `已从 ${selected.length} 个平台（${labels}）卸载 ${removedCount} 个 skill`, platforms: selected, removedCount };
     }
 
     // ==================== 编排 ====================
