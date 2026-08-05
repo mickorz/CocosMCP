@@ -89,6 +89,10 @@ module.exports = Editor.Panel.define({
                             confirm: '确认卸载',
                             uninstall_selected: '卸载选中平台',
                             uninstalling: '卸载中',
+                            skill_manager: '技能管理',
+                            auto_skills: '自动化生成 SKILL',
+                            custom_skills: '自定义 SKILL',
+                            open_skill_dir: '打开文件夹',
                             start_server: '启动服务器',
                             stop_server: '停止服务器',
                             server_settings: '服务器设置',
@@ -177,6 +181,10 @@ module.exports = Editor.Panel.define({
                             confirm: 'Confirm Uninstall',
                             uninstall_selected: 'Uninstall Selected',
                             uninstalling: 'Uninstalling',
+                            skill_manager: 'Skill Manager',
+                            auto_skills: 'Auto-generated Skills',
+                            custom_skills: 'Custom Skills',
+                            open_skill_dir: 'Open Folder',
                             start_server: 'Start Server',
                             stop_server: 'Stop Server',
                             server_settings: 'Server Settings',
@@ -523,6 +531,30 @@ module.exports = Editor.Panel.define({
                     };
 
                     // ===== 技能安装器方法 =====
+                    const skillList = ref<{ auto: any[]; custom: any[] }>({ auto: [], custom: [] });
+
+                    // 切换某 skill 勾选（勾选 = 安装时包含）
+                    const onToggleSkill = async (name: string, enabled: boolean) => {
+                        try {
+                            await Editor.Message.request('cocos-mcp-server', 'toggle-skill-enabled', name, enabled);
+                            const upd = (arr: any[]) => arr.forEach((s: any) => { if (s.name === name) s.enabled = enabled; });
+                            upd(skillList.value.auto);
+                            upd(skillList.value.custom);
+                            skillList.value = { auto: [...skillList.value.auto], custom: [...skillList.value.custom] };
+                        } catch (error) {
+                            console.error('[Vue App] 切换 skill 状态失败:', error);
+                        }
+                    };
+
+                    // 打开 skill 目录（系统文件管理器）
+                    const onOpenSkillDir = async (name: string) => {
+                        try {
+                            await Editor.Message.request('cocos-mcp-server', 'open-skill-dir', name);
+                        } catch (error) {
+                            console.error('[Vue App] 打开 skill 目录失败:', error);
+                        }
+                    };
+
                     const loadSkillInstallerState = async () => {
                         try {
                             const result = await Editor.Message.request('cocos-mcp-server', 'getSkillInstallerState');
@@ -536,6 +568,15 @@ module.exports = Editor.Panel.define({
                                     mcpEnableChrome.value = !!result.mcpConfig.enableChrome;
                                     mcpAutoConfig.value = !!result.mcpConfig.autoConfig;
                                 }
+                            }
+                            // 同时刷新技能管理列表（两类 + 勾选状态）
+                            try {
+                                const list = await Editor.Message.request('cocos-mcp-server', 'list-skills');
+                                if (list && list.success) {
+                                    skillList.value = { auto: list.auto || [], custom: list.custom || [] };
+                                }
+                            } catch (e) {
+                                console.error('[Vue App] 加载技能列表失败:', e);
                             }
                         } catch (error) {
                             console.error('[Vue App] 加载技能安装器状态失败:', error);
@@ -733,6 +774,9 @@ module.exports = Editor.Panel.define({
                         toolCategories,
                         settingsChanged,
                         skillPlatforms,
+                        skillList,
+                        onToggleSkill,
+                        onOpenSkillDir,
                         skillAutoInstall,
                         skillLastGenerated,
                         skillGenerating,

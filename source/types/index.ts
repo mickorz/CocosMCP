@@ -157,6 +157,16 @@ export interface SkillInstallerSettings {
     autoInstall: boolean;
     platforms: Record<SkillPlatformKey, boolean>;
     lastGenerated: string;
+    // 各 skill 的勾选状态（勾选 = 安装时包含）；未记录默认 true
+    skillEnabled: Record<string, boolean>;
+}
+
+export interface SkillInfo {
+    name: string;
+    description: string;
+    dir: string;
+    category: 'auto' | 'custom';
+    enabled: boolean;
 }
 
 export interface SkillPlatformState {

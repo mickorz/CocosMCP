@@ -132,6 +132,32 @@
 
     <!-- 技能选项卡 -->
     <div class="tab-content" v-show="activeTab === 'skills'">
+        <section class="skill-manager">
+            <h3>{{ t('skill_manager') }}</h3>
+            <div class="skill-mgr-group">
+                <h4>{{ t('auto_skills') }} ({{ skillList.auto.length }})</h4>
+                <div v-for="s in skillList.auto" :key="'a-'+s.name" class="skill-mgr-item">
+                    <ui-checkbox :value="s.enabled" @change="onToggleSkill(s.name, $event.target.checked)"></ui-checkbox>
+                    <div class="skill-mgr-info">
+                        <div class="skill-mgr-name">{{ s.name }}</div>
+                        <div class="skill-mgr-desc">{{ s.description }}</div>
+                    </div>
+                    <ui-button @click="onOpenSkillDir(s.name)" class="small secondary">{{ t('open_skill_dir') }}</ui-button>
+                </div>
+            </div>
+            <div class="skill-mgr-group">
+                <h4>{{ t('custom_skills') }} ({{ skillList.custom.length }})</h4>
+                <div v-for="s in skillList.custom" :key="'c-'+s.name" class="skill-mgr-item">
+                    <ui-checkbox :value="s.enabled" @change="onToggleSkill(s.name, $event.target.checked)"></ui-checkbox>
+                    <div class="skill-mgr-info">
+                        <div class="skill-mgr-name">{{ s.name }}</div>
+                        <div class="skill-mgr-desc">{{ s.description }}</div>
+                    </div>
+                    <ui-button @click="onOpenSkillDir(s.name)" class="small secondary">{{ t('open_skill_dir') }}</ui-button>
+                </div>
+            </div>
+        </section>
+
         <section class="skill-generator">
             <h3>{{ t('skill_generation') }}</h3>
             <div class="skill-gen-info">

@@ -230,6 +230,30 @@ export const methods: { [key: string]: (...any: any) => any } = {
         return skillInstaller.uninstallPlatforms();
     },
 
+    /**
+     * @en List all skills (auto-generated + custom) with enabled state
+     * @zh 列出所有技能（自动生成 + 自定义），含勾选状态
+     */
+    async listSkills() {
+        return skillInstaller.listSkills();
+    },
+
+    /**
+     * @en Toggle a skill's enabled state (enabled = included in install)
+     * @zh 切换某 skill 的勾选状态（勾选 = 安装时包含）
+     */
+    async toggleSkillEnabled(name: string, enabled: boolean) {
+        return skillInstaller.toggleSkillEnabled(name, enabled);
+    },
+
+    /**
+     * @en Open a skill's directory in the system file manager
+     * @zh 在系统文件管理器打开某 skill 目录
+     */
+    async openSkillDir(name: string) {
+        return skillInstaller.openSkillDir(name);
+    },
+
     async generateMcpConfig() {
         // 用当前 MCP 端口生成 .mcp.json（直接读持久化配置，确保用最新保存的端口）
         const port = readSettings().port;

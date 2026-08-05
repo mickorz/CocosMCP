@@ -162,6 +162,21 @@
                     "uninstallPlatforms"
                 ]
             },
+            "list-skills": {
+                "methods": [
+                    "listSkills"
+                ]
+            },
+            "toggle-skill-enabled": {
+                "methods": [
+                    "toggleSkillEnabled"
+                ]
+            },
+            "open-skill-dir": {
+                "methods": [
+                    "openSkillDir"
+                ]
+            },
             "generateMcpConfig": {
                 "methods": [
                     "generateMcpConfig"
