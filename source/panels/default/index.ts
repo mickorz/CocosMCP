@@ -147,6 +147,7 @@ module.exports = Editor.Panel.define({
                             mcp_config_installed: '已配置',
                             mcp_config_not_installed: '未配置',
                             generate_mcp_config: '生成 .mcp.json',
+                            generate_opencode_config: '生成 opencode.json',
                             mcp_auto_config: '自动启动(扩展启动时自动生成 .mcp.json)',
                         },
                         en: {
@@ -239,6 +240,7 @@ module.exports = Editor.Panel.define({
                             mcp_config_installed: 'Configured',
                             mcp_config_not_installed: 'Not configured',
                             generate_mcp_config: 'Generate .mcp.json',
+                            generate_opencode_config: 'Generate opencode.json',
                             mcp_auto_config: 'Auto start (auto-generate .mcp.json on extension load)'
                         }
                     };
@@ -314,6 +316,7 @@ module.exports = Editor.Panel.define({
                     const mcpEnableChrome = ref(false);
                     const mcpAutoConfig = ref(false);
                     const mcpConfigGenerating = ref(false);
+                    const opencodeConfigGenerating = ref(false);
                     const mcpConfigMessage = ref('');
                     const mcpConfigMessageSuccess = ref(true);
                     
@@ -684,6 +687,25 @@ module.exports = Editor.Panel.define({
                         }
                     };
 
+                    // 生成 opencode.json（opencode 专用格式，与 .mcp.json 共用 cocos/chrome 勾选）
+                    const generateOpencodeConfig = async () => {
+                        opencodeConfigGenerating.value = true;
+                        mcpConfigMessage.value = '';
+                        try {
+                            const result = await Editor.Message.request('cocos-mcp-server', 'generate-opencode-config');
+                            if (result) {
+                                mcpConfigMessageSuccess.value = !!result.success;
+                                mcpConfigMessage.value = result.message || (result.success ? '生成成功' : '生成失败');
+                                await loadSkillInstallerState();
+                            }
+                        } catch (error: any) {
+                            mcpConfigMessageSuccess.value = false;
+                            mcpConfigMessage.value = '生成失败: ' + (error && error.message ? error.message : error);
+                        } finally {
+                            opencodeConfigGenerating.value = false;
+                        }
+                    };
+
                     const onToggleMcpOption = async (key: 'cocos' | 'chrome' | 'auto', val: boolean) => {
                         if (key === 'cocos') {
                             mcpEnableCocos.value = val;
@@ -828,6 +850,8 @@ module.exports = Editor.Panel.define({
                         onToggleAutoInstall,
                         onTogglePlatform,
                         generateMcpConfig,
+                        generateOpencodeConfig,
+                        opencodeConfigGenerating,
                         onToggleMcpOption
                     };
                 },

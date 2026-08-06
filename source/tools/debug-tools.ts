@@ -1,6 +1,7 @@
 import { ToolDefinition, ToolResponse, ToolExecutor, ConsoleMessage } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
+import { runScriptDiagnostics } from './diagnostics';
 
 declare const Editor: any;
 
@@ -123,6 +124,19 @@ export class DebugTools implements ToolExecutor {
                     },
                     required: ['action']
                 }
+            },
+            {
+                name: 'run_script_diagnostics',
+                description: 'SCRIPT DIAGNOSTICS: TypeScript compile check on the Cocos project using editor-bundled typescript (same version as CocosCreator, so result matches editor compile). Returns error list (file/line/column/code/message), with node_modules/extensions noise filtered out. Use to catch compile errors before/after editing scripts.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        tsconfigPath: {
+                            type: 'string',
+                            description: '(可选) tsconfig 路径，省略则用项目根 tsconfig.json 或 temp/tsconfig.cocos.json'
+                        }
+                    }
+                }
             }
             // NOTE: Node tree functionality moved to node-tools.ts as it's more appropriate there
         ];
@@ -136,6 +150,10 @@ export class DebugTools implements ToolExecutor {
                 return await this.handleDebugLogs(args);
             case 'debug_system':
                 return await this.handleDebugSystem(args);
+            case 'run_script_diagnostics': {
+                const r = await runScriptDiagnostics(Editor.Project.path, { tsconfigPath: args.tsconfigPath });
+                return { success: r.ok, message: r.summary, data: r };
+            }
             default:
                 throw new Error(`Unknown tool: ${toolName}`);
         }

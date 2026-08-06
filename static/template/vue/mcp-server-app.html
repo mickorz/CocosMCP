@@ -111,6 +111,9 @@
                 <ui-button @click="generateMcpConfig" :disabled="mcpConfigGenerating" class="primary">
                     {{ mcpConfigGenerating ? t('generating') : t('generate_mcp_config') }}
                 </ui-button>
+                <ui-button @click="generateOpencodeConfig" :disabled="opencodeConfigGenerating" class="primary">
+                    {{ opencodeConfigGenerating ? t('generating') : t('generate_opencode_config') }}
+                </ui-button>
             </div>
             <div v-if="mcpConfigMessage" class="skill-message" :class="{ 'skill-error': !mcpConfigMessageSuccess }">{{ mcpConfigMessage }}</div>
         </section>
@@ -194,7 +197,7 @@
                 <ui-button @click="installSkills" :disabled="skillInstalling" class="primary">
                     {{ skillInstalling ? t('installing') : t('install_to_selected') }} ({{ selectedPlatformCount }})
                 </ui-button>
-                <ui-button @click="uninstallPlatforms" :disabled="skillUninstalling" class="secondary">
+                <ui-button @click="uninstallPlatforms" :disabled="skillUninstalling" class="brand-uninstall-btn">
                     {{ skillUninstalling ? t('uninstalling') : t('uninstall_selected') }} ({{ selectedPlatformCount }})
                 </ui-button>
             </div>

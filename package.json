@@ -182,6 +182,11 @@
                     "generateMcpConfig"
                 ]
             },
+            "generate-opencode-config": {
+                "methods": [
+                    "generateOpencodeConfig"
+                ]
+            },
             "updateMcpConfigSettings": {
                 "methods": [
                     "updateMcpConfigSettings"

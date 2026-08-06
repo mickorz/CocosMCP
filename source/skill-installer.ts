@@ -378,6 +378,7 @@ export class SkillInstaller {
             walk(custDir);
         }
 
+        console.log(`[SkillInstaller] listSkills: autoDir=${autoDir} exists=${fs.existsSync(autoDir)} | custDir=${custDir} exists=${fs.existsSync(custDir)} | auto=${auto.length} custom=${custom.length}`);
         return { success: true, auto, custom };
     }
 
@@ -662,6 +663,66 @@ export class SkillInstaller {
             return { success: true, message: `已生成 .mcp.json，包含: ${enabled.join(', ')}${tip}`, path: mcpFile, url };
         } catch (e: any) {
             return { success: false, message: `生成 .mcp.json 失败: ${e && e.message ? e.message : e}`, path: '', url: '' };
+        }
+    }
+
+    /**
+     * 在项目根生成/更新 opencode.json 的 mcp 字段
+     * opencode 不用 .mcp.json，用自己的 opencode.json：mcp 字段，type 为 remote(http) / local(stdio)
+     * 智能合并：保留其他 mcp 条目 + 文件顶层其他字段
+     * - cocos-creator：{ type: 'remote', url }（opencode 的 HTTP MCP 用 remote 类型）
+     * - chrome-devtools：{ type: 'local', command: ['npx', 'chrome-devtools-mcp@latest'] }（command 是数组）
+     */
+    public generateOpencodeConfig(port?: number): { success: boolean; message: string; path: string } {
+        try {
+            const usePort = port || 3001;
+            const file = path.join(Editor.Project.path, 'opencode.json');
+            const url = `http://127.0.0.1:${usePort}/mcp`;
+            const enableCocos = this.mcpConfigSettings.enableCocos;
+            const enableChrome = this.mcpConfigSettings.enableChrome;
+
+            if (!enableCocos && !enableChrome) {
+                return { success: false, message: '请至少勾选一个 MCP（cocos mcp 或 chrome mcp）', path: file };
+            }
+
+            // 读现有 opencode.json，保留其他配置
+            let config: any = {};
+            let merged = false;
+            if (fs.existsSync(file)) {
+                try {
+                    const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
+                    if (existing && typeof existing === 'object') {
+                        config = existing;
+                        merged = true;
+                    }
+                } catch {
+                    // 损坏的 json 走全新配置
+                }
+            }
+            if (!config.mcp || typeof config.mcp !== 'object') {
+                config.mcp = {};
+            }
+
+            // opencode：cocos-creator 用 remote(http)+url；chrome-devtools 用 local(stdio)+command 数组
+            if (enableCocos) {
+                config.mcp['cocos-creator'] = { type: 'remote', url };
+            } else {
+                delete config.mcp['cocos-creator'];
+            }
+            if (enableChrome) {
+                config.mcp['chrome-devtools'] = { type: 'local', command: ['npx', 'chrome-devtools-mcp@latest'] };
+            } else {
+                delete config.mcp['chrome-devtools'];
+            }
+
+            fs.writeFileSync(file, JSON.stringify(config, null, 2));
+            const enabled: string[] = [];
+            if (enableCocos) enabled.push('cocos-creator');
+            if (enableChrome) enabled.push('chrome-devtools');
+            const tip = merged ? '（已合并，保留其他配置）' : '';
+            return { success: true, message: `已生成 opencode.json，包含: ${enabled.join(', ')}${tip}`, path: file };
+        } catch (e: any) {
+            return { success: false, message: `生成 opencode.json 失败: ${e && e.message ? e.message : e}`, path: '' };
         }
     }
 

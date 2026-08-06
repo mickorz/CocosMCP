@@ -88,5 +88,5 @@ dist/examples/
 *.bak
 *.old
 
-# 技能安装器生成产物与用户手写定制技能（运行时生成，不进 git）
-CodeAgents/
+# CodeAgents（SkillAutoGenerate 生成产物 + SkillCustomers 手写 skill）进 git 跟踪，换机器/clone 也有 skill
+# 注：SkillAutoGenerate 含端口渲染（不同机器端口可能不同）；若只想跟踪手写 skill，可改为忽略 CodeAgents/SkillAutoGenerate/

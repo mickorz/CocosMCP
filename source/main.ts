@@ -260,6 +260,15 @@ export const methods: { [key: string]: (...any: any) => any } = {
         return skillInstaller.generateMcpConfig(port);
     },
 
+    /**
+     * @en Generate opencode.json (opencode uses its own config format, not .mcp.json)
+     * @zh 生成 opencode.json（opencode 不用 .mcp.json，用自己的 mcp 字段格式）
+     */
+    async generateOpencodeConfig() {
+        const port = readSettings().port;
+        return skillInstaller.generateOpencodeConfig(port);
+    },
+
     async updateMcpConfigSettings(enableCocos: boolean, enableChrome: boolean, autoConfig: boolean) {
         try {
             skillInstaller.updateMcpConfigSettings(enableCocos, enableChrome, autoConfig);
