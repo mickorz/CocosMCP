@@ -29,6 +29,7 @@
 - **面板 URL 链接化**：预览地址、HTTP URL 改为可点击链接（单击用默认浏览器打开，选中文字 Ctrl+C 复制），不用按钮。
 - **更新/卸载按钮**：品牌头部新增更新（占位）与卸载按钮（清理各平台 skills + .mcp.json + best-effort 卸载扩展，Vue modal 二次确认）；技能 Tab 新增「卸载选中平台」按钮（只清勾选平台的 skills）。
 - **独立脚本 start-preview.js**：scripts/start-preview.js，命令行触发 run(openBrowser=false) 启动预览服务不弹浏览器，配合外部专用调试浏览器（chrome-devtools-mcp）使用，避免双窗口。
+- **新增 cocos-script-compile skill**：CodeAgents/SkillCustomers 下新增编译检查 skill，封装 run_script_diagnostics 调用流程（查报错 → 按 diagnostics 修 assets 脚本 → 重查到 ok=true），AI 直接触发做 TypeScript 编译检查闭环；自定义 skill 现共 4 个（preview-scene / browser-logs / browser-eval / script-compile）。
 
 
 ## 工具体系与操作码
