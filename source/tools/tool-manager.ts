@@ -10,11 +10,15 @@ export class ToolManager {
     constructor() {
         this.settings = this.readToolManagerSettings();
         this.initializeAvailableTools();
-        
+
         // 如果没有配置，自动创建一个默认配置
         if (this.settings.configurations.length === 0) {
             console.log('[ToolManager] No configurations found, creating default configuration...');
             this.createConfiguration('默认配置', '自动创建的默认工具配置');
+        } else {
+            // 已有配置：补全 availableTools 里有、但配置 tools 里没有的新工具
+            // （旧配置是创建时的快照，后续新增工具不会自动进配置，导致面板/MCP 看不到新工具）
+            this.syncNewToolsToConfigs();
         }
     }
 
@@ -226,6 +230,36 @@ export class ToolManager {
         });
 
         console.log(`[ToolManager] Initialized ${this.availableTools.length} default tools`);
+    }
+
+    /**
+     * 补全新工具到所有现有配置
+     * availableTools 是最新的（含全部工具），但各配置的 tools 是创建时的快照；
+     * 此方法把 availableTools 里有、配置 tools 里没有的工具补进每个配置（enabled=true）
+     * 避免"加新工具后面板/MCP 看不到，必须删 tool-manager.json 重置"的问题
+     */
+    private syncNewToolsToConfigs(): void {
+        let added = 0;
+        for (const config of this.settings.configurations) {
+            const existing = new Set(config.tools.map(t => `${t.category}_${t.name}`));
+            let configChanged = false;
+            for (const tool of this.availableTools) {
+                const key = `${tool.category}_${tool.name}`;
+                if (!existing.has(key)) {
+                    config.tools.push({ ...tool, enabled: true });
+                    existing.add(key);
+                    added++;
+                    configChanged = true;
+                }
+            }
+            if (configChanged) {
+                config.updatedAt = new Date().toISOString();
+            }
+        }
+        if (added > 0) {
+            this.saveSettings();
+            console.log(`[ToolManager] 已补全 ${added} 个新工具到现有配置`);
+        }
     }
 
     public getAvailableTools(): ToolConfig[] {

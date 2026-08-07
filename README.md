@@ -4,7 +4,7 @@
 
 **🚀 现在提供 50 个强力融合工具，实现99%的编辑器控制！**
 
-## 请勿开源更新日志
+## 更新日志
 
 ## 🚀 重大更新 v1.5.4
 
@@ -19,6 +19,16 @@
 - **接口优化**：所有接口参数更清晰，文档更完善，AI更容易理解和调用。
 - **插件面板优化**：面板UI更简洁，操作更直观。
 - **性能与兼容性提升**：整体架构更高效，兼容Cocos Creator 3.8.6及以上所有版本。
+
+### 近期更新（2026-08）
+
+- **端口动态化闭环（多工程 7456 冲突修复）**：多工程同时打开时预览端口自动递增（7456→7457），MCP server 启动时查询并缓存真实预览地址，面板状态区显示，AI 通过 server_information 或 run(openBrowser=false) 动态获取；浏览器调试三件套 skill（preview-scene / browser-logs / browser-eval）不再写死 7456。
+- **技能管理块**：技能 Tab 新增「技能管理」section，分「自动化生成 SKILL」（13 份模板）与「自定义 SKILL」（CodeAgents/SkillCustomers 手写）两类列表，每个 skill 勾选框控制是否安装（勾选状态持久化 skillEnabled，installSkills 只装勾选的），支持「打开文件夹」按钮直接定位 skill 目录。
+- **MCP 配置一键生成**：服务器 Tab 新增「生成 .mcp.json」和「生成 opencode.json」按钮，按勾选（cocos mcp / chrome mcp）在项目根写出对应配置（智能合并，保留其他 MCP；opencode 用 mcp 字段 + remote/local 类型）。
+- **TypeScript 编译检查（run_script_diagnostics）**：新增 debug 工具，用编辑器内置 typescript 跑 tsc --noEmit --skipLibCheck，返回用户代码 error 列表（file/line/column/code/message），过滤 node_modules/extensions/引擎声明噪音；HTTP 端点 POST /api/debug/run_script_diagnostics，供 cocoscli verify 等做编译检查闭环。
+- **面板 URL 链接化**：预览地址、HTTP URL 改为可点击链接（单击用默认浏览器打开，选中文字 Ctrl+C 复制），不用按钮。
+- **更新/卸载按钮**：品牌头部新增更新（占位）与卸载按钮（清理各平台 skills + .mcp.json + best-effort 卸载扩展，Vue modal 二次确认）；技能 Tab 新增「卸载选中平台」按钮（只清勾选平台的 skills）。
+- **独立脚本 start-preview.js**：scripts/start-preview.js，命令行触发 run(openBrowser=false) 启动预览服务不弹浏览器，配合外部专用调试浏览器（chrome-devtools-mcp）使用，避免双窗口。
 
 
 ## 工具体系与操作码
@@ -211,6 +221,7 @@ claude mcp add --transport http cocos-creator http://127.0.0.1:3000/mcp（使用
 - **debug_console**: 控制台管理 - 获取/清空控制台日志，支持过滤和限制
 - **debug_logs**: 日志分析 - 读取/搜索/分析项目日志文件，支持模式匹配
 - **debug_system**: 系统调试 - 获取编辑器信息、性能统计、环境信息
+- **run_script_diagnostics**: 脚本诊断 - 用编辑器内置 typescript 跑 tsc 编译检查（--noEmit --skipLibCheck），返回用户代码 error 列表（file/line/column/code/message），过滤 node_modules/extensions/引擎声明噪音；HTTP 端点 POST /api/debug/run_script_diagnostics
 
 ### 📁 资源管理 (asset_*)
 - **asset_manage**: 资源管理 - 批量导入/删除资源、保存元数据、生成URL
