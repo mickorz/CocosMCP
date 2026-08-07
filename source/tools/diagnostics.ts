@@ -29,6 +29,7 @@ export interface DiagnosticItem {
     column: number;
     code: string;
     message: string;
+    snippet?: string;  // 方案B：error 行附近的代码片段，cocoscli 直接展示不用再读文件
 }
 
 export interface DiagnosticsResult {
@@ -39,6 +40,7 @@ export interface DiagnosticsResult {
     tsconfigPath: string;
     exitCode: number;
     summary: string;
+    compileTime?: number;  // 方案B：编译耗时 ms
     diagnostics: DiagnosticItem[];
     stdout: string;
     stderr: string;
@@ -112,10 +114,27 @@ function runExec(file: string, args: string[], cwd: string, env: NodeJS.ProcessE
 }
 
 /**
+ * 读 filePath 第 line 行附近的代码片段（前后各 contextLines 行）
+ * 方案B：让 diagnostic 自带 snippet，cocoscli 不用再读文件拼
+ */
+function readSnippet(filePath: string, line: number, contextLines: number = 1): string {
+    try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const arr = content.split(/\r?\n/);
+        const start = Math.max(0, line - 1 - contextLines);
+        const end = Math.min(arr.length, line + contextLines);
+        return arr.slice(start, end).join('\n');
+    } catch {
+        return '';
+    }
+}
+
+/**
  * 解析 tsc 输出，过滤 node_modules / extensions 噪音（只留项目脚本真实 error）
  * 噪音来源：副本扩展的 node_modules/@types 等，和编辑器 typescript 不兼容的 syntax error
+ * projectPath 用于读 snippet（error 行附近代码）
  */
-export function parseTscOutput(output: string): DiagnosticItem[] {
+export function parseTscOutput(output: string, projectPath?: string): DiagnosticItem[] {
     const lines = String(output || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const regex = /^(.*)\((\d+),(\d+)\):\s+error\s+(TS\d+):\s+(.*)$/i;
     const diagnostics: DiagnosticItem[] = [];
@@ -126,7 +145,16 @@ export function parseTscOutput(output: string): DiagnosticItem[] {
         const norm = file.replace(/\\/g, '/');
         // B 过滤：跳过 node_modules / extensions 路径（依赖声明 / 副本扩展噪音）
         if (norm.includes('/node_modules/') || norm.includes('/extensions/')) continue;
-        diagnostics.push({ file, line: Number(m[2]), column: Number(m[3]), code: m[4], message: m[5] });
+        const lineNum = Number(m[2]);
+        diagnostics.push({
+            file,
+            line: lineNum,
+            column: Number(m[3]),
+            code: m[4],
+            message: m[5],
+            // 方案B：带 snippet（error 行附近代码），cocoscli 直接展示不用读文件
+            snippet: projectPath ? readSnippet(path.join(projectPath, file), lineNum) : '',
+        });
     }
     return diagnostics;
 }
@@ -145,9 +173,11 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
 
     // --skipLibCheck：跳过所有 .d.ts 检查（cc.d.ts/jsb.d.ts 等引擎声明的类型噪音全消，只剩用户 .ts 代码 error）
     const args = [...command.argsPrefix, '--noEmit', '--skipLibCheck', '-p', tsconfigPath, '--pretty', 'false'];
+    const startTime = Date.now();
     const result = await runExec(command.binary, args, projectPath, command.env);
+    const compileTime = Date.now() - startTime;  // 方案B：编译耗时 ms
     const merged = [result.stdout, result.stderr, result.error].filter(Boolean).join('\n').trim();
-    const diagnostics = parseTscOutput(merged);
+    const diagnostics = parseTscOutput(merged, projectPath);  // 传 projectPath 以读 snippet
     const ok = result.code === 0 && diagnostics.length === 0;
 
     return {
@@ -157,6 +187,7 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
         compiler: command.compiler,
         tsconfigPath,
         exitCode: result.code,
+        compileTime,
         summary: ok
             ? 'TypeScript diagnostics completed successfully with no errors.'
             : diagnostics.length
