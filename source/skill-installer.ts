@@ -151,13 +151,17 @@ export class SkillInstaller {
         try {
             this.ensureSettingsDir();
             const file = this.getMcpConfigSettingsPath();
-            if (fs.existsSync(file)) {
+            const fileExists = fs.existsSync(file);
+            console.log(`[SkillInstaller] readMcpConfigSettings: file=${file} exists=${fileExists}`);
+            if (fileExists) {
                 const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-                return {
+                const result = {
                     enableCocos: parsed.enableCocos !== false,
                     enableChrome: !!parsed.enableChrome,
                     autoConfig: !!parsed.autoConfig
                 };
+                console.log(`[SkillInstaller] readMcpConfigSettings: parsed=${JSON.stringify(parsed)} -> ${JSON.stringify(result)}`);
+                return result;
             }
         } catch (e) {
             console.error('[SkillInstaller] 读取 MCP 配置设置失败:', e);
@@ -734,17 +738,19 @@ export class SkillInstaller {
             selected: this.settings.platforms[key],
             installed: this.isPlatformInstalled(key)
         }));
+        const mcpConfig = {
+            exists: fs.existsSync(path.join(Editor.Project.path, '.mcp.json')),
+            enableCocos: this.mcpConfigSettings.enableCocos,
+            enableChrome: this.mcpConfigSettings.enableChrome,
+            autoConfig: this.mcpConfigSettings.autoConfig
+        };
+        console.log(`[SkillInstaller] getState mcpConfig: ${JSON.stringify(mcpConfig)}`);
         return {
             success: true,
             autoInstall: this.settings.autoInstall,
             platforms,
             lastGenerated: this.settings.lastGenerated,
-            mcpConfig: {
-                exists: fs.existsSync(path.join(Editor.Project.path, '.mcp.json')),
-                enableCocos: this.mcpConfigSettings.enableCocos,
-                enableChrome: this.mcpConfigSettings.enableChrome,
-                autoConfig: this.mcpConfigSettings.autoConfig
-            }
+            mcpConfig
         };
     }
 
