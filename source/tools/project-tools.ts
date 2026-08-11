@@ -198,8 +198,15 @@ export class ProjectTools implements ToolExecutor {
             // 3. 若指定场景，切换当前场景再预览
             //    3.7.3 没有"不切场景直接预览指定场景"的消息，只能先切换当前编辑场景
             if (sceneUuid) {
+                // 超时保护: 当前场景 dirty 时 open-scene 会弹原生确认框，阻塞 scene 通道导致永久挂起
+                const OPEN_SCENE_TIMEOUT = 8000;
+                const openScenePromise = Editor.Message.request('scene', 'open-scene', sceneUuid);
+                const timeoutPromise = new Promise<never>((_, reject) => setTimeout(
+                    () => reject(new Error(`scene:open-scene 超时(${OPEN_SCENE_TIMEOUT}ms)，编辑器可能弹出了原生对话框`)),
+                    OPEN_SCENE_TIMEOUT
+                ));
                 try {
-                    await Editor.Message.request('scene', 'open-scene', sceneUuid);
+                    await Promise.race([openScenePromise, timeoutPromise]);
                     // 场景加载需要时间，等待一下再预览
                     await new Promise<void>((resolve) => setTimeout(resolve, 1000));
                 } catch (e: any) {

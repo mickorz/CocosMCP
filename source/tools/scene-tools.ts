@@ -227,18 +227,42 @@ export class SceneTools implements ToolExecutor {
     }
 
     private async openScene(scenePath: string): Promise<ToolResponse> {
+        // 失败根因: 当前场景 dirty 时 scene:open-scene 会弹原生"是否保存"确认框，
+        // 阻塞 scene 进程消息循环，导致 Editor.Message.request 永久挂起，所有 scene:* 消息跟着卡死。
+        // 修复: ① 切换前 save-scene 从源头避免触发对话框；② 所有 scene 消息加超时保护，永不永久挂起。
+        const TIMEOUT_MS = 8000;
+        const reqT = (scope: string, method: string, ...args: any[]) =>
+            Promise.race([
+                (Editor.Message.request as any)(scope, method, ...args),
+                new Promise<never>((_, reject) => setTimeout(
+                    () => reject(new Error(`消息 ${scope}:${method} 超时(${TIMEOUT_MS}ms)，编辑器可能弹出了原生对话框`)),
+                    TIMEOUT_MS
+                ))
+            ]);
+
         try {
-            // 首先获取场景的UUID
+            // 1. 取目标场景 UUID（asset-db 通道，不受 scene 阻塞影响）
             const uuid: string | null = await Editor.Message.request('asset-db', 'query-uuid', scenePath);
             if (!uuid) {
-                return { success: false, error: 'Scene not found' };
+                return { success: false, error: `找不到场景: ${scenePath}` };
             }
 
-            // 使用正确的 scene API 打开场景 (需要UUID)
-            await Editor.Message.request('scene', 'open-scene', uuid);
-            return { success: true, message: `Scene opened: ${scenePath}` };
+            // 2. 切换前保存当前场景，避免 dirty 触发原生确认对话框导致 scene 通道阻塞
+            //    save-scene 对未修改场景是幂等 no-op，无副作用
+            try {
+                await reqT('scene', 'save-scene');
+            } catch (e: any) {
+                console.log(`[SceneTools] 切换前保存当前场景失败(忽略): ${e && e.message ? e.message : e}`);
+            }
+
+            // 3. 切换场景（带超时保护）
+            await reqT('scene', 'open-scene', uuid);
+            // 场景加载需要时间，稍等一下
+            await new Promise<void>((resolve) => setTimeout(resolve, 500));
+
+            return { success: true, message: `场景已切换: ${scenePath}`, data: { uuid, scenePath } };
         } catch (err: any) {
-            return { success: false, error: err.message };
+            return { success: false, error: err.message || String(err) };
         }
     }
 
