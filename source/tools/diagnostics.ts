@@ -1,27 +1,30 @@
 'use strict';
 
 /**
- * 脚本诊断 diagnostics TypeScript 编译检查
+ * 脚本诊断 diagnostics TypeScript 编译检查（Compiler API 版）
  *
- * 移植自 funplay-cocos-mcp（MIT），用 CocosCreator 编辑器内置 typescript 跑 tsc --noEmit，
- * 避开"工程没装 typescript / typescript 版本和编辑器不兼容 / cc 声明缺失"等坑。
+ * 用编辑器内置 typescript 的 Compiler API（ts.createProgram + getSyntacticDiagnostics +
+ * getSemanticDiagnostics）收全量诊断，避免 tsc CLI 的 syntactic 短路（tsc CLI 有语法错误
+ * 就不调 getSemanticDiagnostics，导致其他文件类型错误全消失）。
  *
  * 流程：
  *   runScriptDiagnostics
- *     ├─ findTsConfig 找 tsconfig.json 或 temp tsconfig cocos json
- *     ├─ findTypescriptCommand 找编辑器内置 tsc 优先 project node_modules 兜底
- *     │     └─ 用 process.execPath 编辑器 electron + ELECTRON_RUN_AS_NODE 当 node 跑 tsc
- *     ├─ runExec tsc --noEmit -p tsconfig --pretty false
- *     └─ parseTscOutput 解析 error 行 过滤 node_modules 和 extensions 噪音
+ *     ├─ findTypescriptModule 找编辑器内置 typescript 模块（require 它）
+ *     ├─ readConfigFile + parseJsonConfigFileContent 解析 tsconfig（含 extends）
+ *     ├─ createProgram
+ *     ├─ getSyntacticDiagnostics + getSemanticDiagnostics（天然分类，不短路）
+ *     └─ toDiagnosticItem 转 DiagnosticItem（带 category + snippet）
  *
- * 来源：funplay-cocos-mcp/lib/diagnostics.js（MIT, https://github.com/FunplayAI/funplay-cocos-mcp）
+ * 关键：getSyntacticDiagnostics 与 getSemanticDiagnostics 分别调用，即使存在 syntactic
+ *      错误，semantic 仍会照常返回其他文件的类型错误（一次拿全语法+类型）。
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFile } from 'child_process';
 
 declare const Editor: any;
+
+export type DiagnosticCategory = 'syntactic' | 'semantic';
 
 export interface DiagnosticItem {
     file: string;
@@ -29,21 +32,21 @@ export interface DiagnosticItem {
     column: number;
     code: string;
     message: string;
-    snippet?: string;  // 方案B：error 行附近的代码片段，cocoscli 直接展示不用再读文件
+    category: DiagnosticCategory;  // syntactic / semantic（Compiler API 天然分类）
+    snippet?: string;  // error 行附近代码片段，cocoscli 直接展示不用再读文件
 }
 
 export interface DiagnosticsResult {
     ok: boolean;
     tool: string;
-    binary?: string;
-    compiler?: string;
     tsconfigPath: string;
+    typescriptPath?: string;       // 命中的 typescript 模块路径
     exitCode: number;
+    syntacticCount: number;        // 语法错误数
+    semanticCount: number;         // 语义（类型）错误数
     summary: string;
-    compileTime?: number;  // 方案B：编译耗时 ms
+    compileTime?: number;          // 编译耗时 ms
     diagnostics: DiagnosticItem[];
-    stdout: string;
-    stderr: string;
 }
 
 function exists(filePath: string): boolean {
@@ -51,41 +54,72 @@ function exists(filePath: string): boolean {
 }
 
 /**
- * 找 typescript 编译器：优先编辑器内置（resources/app.asar.unpacked 等），兜底项目本地
- * 实测 CocosCreator 3.7.3 命中：<Editor.App.path 父级>/resources/app.asar.unpacked/node_modules/typescript/bin/tsc
- * 返回用 process.execPath（编辑器 electron）+ ELECTRON_RUN_AS_NODE=1 当 node 跑 tsc
+ * 找编辑器内置 typescript 模块根（用于 require）
+ * 候选路径沿用原 findTypescriptCommand，返回模块根（非 bin/tsc），验 package.json 存在
+ * 实测 CocosCreator 3.7.3 命中：app.asar.unpacked/node_modules/typescript
  */
-export function findTypescriptCommand(projectPath: string): { binary: string; argsPrefix: string[]; compiler: string; env: NodeJS.ProcessEnv } | null {
-    const nodeBinary = process.execPath;
+export function findTypescriptModule(projectPath: string): string | null {
     const possibleRoots = [
         Editor && Editor.App ? Editor.App.path : '',
         (process as any).resourcesPath || '',
         Editor && Editor.App && Editor.App.path ? path.dirname(Editor.App.path) : '',
     ].filter(Boolean);
 
-    const editorBundled: string[] = [];
+    const candidates: string[] = [
+        path.join(projectPath, 'node_modules', 'typescript'),
+    ];
     for (const root of possibleRoots) {
-        editorBundled.push(
-            path.join(root, 'resources', '3d', 'engine', 'node_modules', 'typescript', 'bin', 'tsc'),
-            path.join(root, 'resources', '3d', 'engine', 'node_modules', '@cocos', 'typescript', 'bin', 'tsc'),
-            path.join(root, 'app.asar.unpacked', 'node_modules', 'typescript', 'bin', 'tsc'),
-            path.join(root, 'resources', 'app.asar.unpacked', 'node_modules', 'typescript', 'bin', 'tsc'),
-            path.join(root, 'Contents', 'Resources', 'resources', '3d', 'engine', 'node_modules', 'typescript', 'bin', 'tsc'),
-            path.join(root, 'Contents', 'Resources', 'resources', '3d', 'engine', 'node_modules', '@cocos', 'typescript', 'bin', 'tsc')
+        candidates.push(
+            path.join(root, 'resources', '3d', 'engine', 'node_modules', 'typescript'),
+            path.join(root, 'resources', '3d', 'engine', 'node_modules', '@cocos', 'typescript'),
+            path.join(root, 'app.asar.unpacked', 'node_modules', 'typescript'),
+            path.join(root, 'resources', 'app.asar.unpacked', 'node_modules', 'typescript'),
+            path.join(root, 'Contents', 'Resources', 'resources', '3d', 'engine', 'node_modules', 'typescript'),
+            path.join(root, 'Contents', 'Resources', 'resources', '3d', 'engine', 'node_modules', '@cocos', 'typescript')
         );
     }
-
-    const candidates = [
-        path.join(projectPath, 'node_modules', 'typescript', 'bin', 'tsc'),
-        ...editorBundled,
-    ];
-
-    for (const scriptPath of candidates) {
-        if (exists(scriptPath)) {
-            return { binary: nodeBinary, argsPrefix: [scriptPath], compiler: scriptPath, env: { ELECTRON_RUN_AS_NODE: '1' } };
+    for (const c of candidates) {
+        if (exists(path.join(c, 'package.json'))) {
+            return c;
         }
     }
     return null;
+}
+
+/** 读 filePath 第 line 行附近的代码片段（前后各 contextLines 行） */
+function readSnippet(filePath: string, line: number, contextLines: number = 1): string {
+    try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const arr = content.split(/\r?\n/);
+        const start = Math.max(0, line - 1 - contextLines);
+        const end = Math.min(arr.length, line + contextLines);
+        return arr.slice(start, end).join('\n');
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * 把一条 ts.Diagnostic 转成 DiagnosticItem
+ * 过滤：d.file 或 d.start 为空（config/options 诊断）跳过；
+ *      /node_modules/ /extensions/ 路径跳过（依赖声明 / 副本扩展噪声）
+ */
+function toDiagnosticItem(d: any, category: DiagnosticCategory, projectPath: string, ts: any): DiagnosticItem | null {
+    if (!d.file || d.start == null) return null;
+    const absPath: string = d.file.fileName;
+    const relPath = path.relative(projectPath, absPath).replace(/\\/g, '/');
+    if (relPath.includes('/node_modules/') || relPath.includes('/extensions/')) return null;
+    const pos = d.file.getLineAndCharacterOfPosition(d.start);
+    const message = ts.flattenDiagnosticMessageText(d.messageText, '\n');
+    return {
+        file: relPath,
+        line: pos.line + 1,
+        column: pos.character + 1,
+        code: 'TS' + d.code,
+        message,
+        category,
+        snippet: readSnippet(absPath, pos.line + 1),
+    };
 }
 
 /** 找 tsconfig：项目根 tsconfig.json → temp/tsconfig.cocos.json，或用显式指定路径 */
@@ -100,101 +134,70 @@ export function findTsConfig(projectPath: string, explicitPath?: string): string
     return candidates.find(exists) || '';
 }
 
-function runExec(file: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): Promise<{ code: number; stdout: string; stderr: string; error: string }> {
-    return new Promise((resolve) => {
-        execFile(file, args, { cwd, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
-            resolve({
-                code: error && typeof (error as any).code === 'number' ? (error as any).code : 0,
-                stdout: stdout || '',
-                stderr: stderr || '',
-                error: error ? error.message : '',
-            });
-        });
-    });
-}
-
 /**
- * 读 filePath 第 line 行附近的代码片段（前后各 contextLines 行）
- * 方案B：让 diagnostic 自带 snippet，cocoscli 不用再读文件拼
+ * 跑 TypeScript 编译检查（Compiler API），返回分类 diagnostics
+ *
+ * 与 tsc CLI 的区别：getSyntacticDiagnostics 与 getSemanticDiagnostics 分别请求，
+ * 即使有 syntactic 错误，semantic 仍会返回其他文件的类型错误，一次拿全。
  */
-function readSnippet(filePath: string, line: number, contextLines: number = 1): string {
-    try {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const arr = content.split(/\r?\n/);
-        const start = Math.max(0, line - 1 - contextLines);
-        const end = Math.min(arr.length, line + contextLines);
-        return arr.slice(start, end).join('\n');
-    } catch {
-        return '';
-    }
-}
-
-/**
- * 解析 tsc 输出，过滤 node_modules / extensions 噪音（只留项目脚本真实 error）
- * 噪音来源：副本扩展的 node_modules/@types 等，和编辑器 typescript 不兼容的 syntax error
- * projectPath 用于读 snippet（error 行附近代码）
- */
-export function parseTscOutput(output: string, projectPath?: string): DiagnosticItem[] {
-    const lines = String(output || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const regex = /^(.*)\((\d+),(\d+)\):\s+error\s+(TS\d+):\s+(.*)$/i;
-    const diagnostics: DiagnosticItem[] = [];
-    for (const line of lines) {
-        const m = regex.exec(line);
-        if (!m) continue;
-        const file = m[1];
-        const norm = file.replace(/\\/g, '/');
-        // B 过滤：跳过 node_modules / extensions 路径（依赖声明 / 副本扩展噪音）
-        if (norm.includes('/node_modules/') || norm.includes('/extensions/')) continue;
-        const lineNum = Number(m[2]);
-        diagnostics.push({
-            file,
-            line: lineNum,
-            column: Number(m[3]),
-            code: m[4],
-            message: m[5],
-            // 方案B：带 snippet（error 行附近代码），cocoscli 直接展示不用读文件
-            snippet: projectPath ? readSnippet(path.join(projectPath, file), lineNum) : '',
-        });
-    }
-    return diagnostics;
-}
-
-/** 跑 TypeScript 编译检查，返回 diagnostics 列表 */
 export async function runScriptDiagnostics(projectPath: string, options: { tsconfigPath?: string } = {}): Promise<DiagnosticsResult> {
     const tsconfigPath = findTsConfig(projectPath, options.tsconfigPath);
     if (!tsconfigPath || !exists(tsconfigPath)) {
-        return { ok: false, tool: 'typescript', tsconfigPath: '', exitCode: 0, summary: 'No tsconfig.json was found in the Cocos project.', diagnostics: [], stdout: '', stderr: '' };
+        return { ok: false, tool: 'typescript', tsconfigPath: '', exitCode: 0, syntacticCount: 0, semanticCount: 0, summary: 'No tsconfig.json was found in the Cocos project.', diagnostics: [] };
     }
 
-    const command = findTypescriptCommand(projectPath);
-    if (!command) {
-        return { ok: false, tool: 'typescript', tsconfigPath, exitCode: 0, summary: 'TypeScript compiler was not found in the Cocos project or editor installation.', diagnostics: [], stdout: '', stderr: '' };
+    const tsModulePath = findTypescriptModule(projectPath);
+    if (!tsModulePath) {
+        return { ok: false, tool: 'typescript', tsconfigPath, exitCode: 0, syntacticCount: 0, semanticCount: 0, summary: 'TypeScript module was not found in the Cocos project or editor installation.', diagnostics: [] };
     }
 
-    // --skipLibCheck：跳过所有 .d.ts 检查（cc.d.ts/jsb.d.ts 等引擎声明的类型噪音全消，只剩用户 .ts 代码 error）
-    const args = [...command.argsPrefix, '--noEmit', '--skipLibCheck', '-p', tsconfigPath, '--pretty', 'false'];
+    let ts: any;
+    try {
+        ts = require(tsModulePath);
+    } catch (e: any) {
+        return { ok: false, tool: 'typescript', tsconfigPath, exitCode: 0, syntacticCount: 0, semanticCount: 0, summary: `Failed to require typescript module (${tsModulePath}): ${e && e.message}`, diagnostics: [] };
+    }
+
     const startTime = Date.now();
-    const result = await runExec(command.binary, args, projectPath, command.env);
-    const compileTime = Date.now() - startTime;  // 方案B：编译耗时 ms
-    const merged = [result.stdout, result.stderr, result.error].filter(Boolean).join('\n').trim();
-    const diagnostics = parseTscOutput(merged, projectPath);  // 传 projectPath 以读 snippet
-    const ok = result.code === 0 && diagnostics.length === 0;
+    const cfg = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
+    if (cfg.error) {
+        const msg = ts.flattenDiagnosticMessageText(cfg.error.messageText, '\n');
+        return { ok: false, tool: 'typescript', tsconfigPath, exitCode: 0, syntacticCount: 0, semanticCount: 0, summary: `Failed to read tsconfig: ${msg}`, diagnostics: [] };
+    }
+    const parsed = ts.parseJsonConfigFileContent(cfg.config, ts.sys, path.dirname(tsconfigPath), {}, tsconfigPath);
+
+    const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
+
+    // 分类取诊断（Compiler API 不短路：syntactic 错误存在时 semantic 仍返回其他文件类型错误）
+    const syntactic = program.getSyntacticDiagnostics();
+    const semantic = program.getSemanticDiagnostics();
+
+    const diagnostics: DiagnosticItem[] = [];
+    let synCount = 0, semCount = 0;
+    for (const d of syntactic) {
+        const item = toDiagnosticItem(d, 'syntactic', projectPath, ts);
+        if (item) { diagnostics.push(item); synCount++; }
+    }
+    for (const d of semantic) {
+        const item = toDiagnosticItem(d, 'semantic', projectPath, ts);
+        if (item) { diagnostics.push(item); semCount++; }
+    }
+
+    const compileTime = Date.now() - startTime;
+    const ok = diagnostics.length === 0;
 
     return {
         ok,
         tool: 'typescript',
-        binary: command.binary,
-        compiler: command.compiler,
         tsconfigPath,
-        exitCode: result.code,
+        typescriptPath: tsModulePath,
+        exitCode: ok ? 0 : 1,
+        syntacticCount: synCount,
+        semanticCount: semCount,
         compileTime,
         summary: ok
             ? 'TypeScript diagnostics completed successfully with no errors.'
-            : diagnostics.length
-                ? `Found ${diagnostics.length} TypeScript error(s).`
-                : merged || 'TypeScript diagnostics reported a non-zero exit code.',
+            : `Found ${synCount} syntactic and ${semCount} semantic TypeScript error(s).`,
         diagnostics,
-        stdout: result.stdout,
-        stderr: result.stderr,
     };
 }
