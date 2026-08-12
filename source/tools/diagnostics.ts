@@ -102,12 +102,17 @@ function readSnippet(filePath: string, line: number, contextLines: number = 1): 
 /**
  * 把一条 ts.Diagnostic 转成 DiagnosticItem
  * 过滤：d.file 或 d.start 为空（config/options 诊断）跳过；
+ *      工程外文件跳过（跨盘符 / 向上跳出工程，如引擎 jsb.d.ts 声明）；
  *      /node_modules/ /extensions/ 路径跳过（依赖声明 / 副本扩展噪声）
  */
 function toDiagnosticItem(d: any, category: DiagnosticCategory, projectPath: string, ts: any): DiagnosticItem | null {
     if (!d.file || d.start == null) return null;
     const absPath: string = d.file.fileName;
-    const relPath = path.relative(projectPath, absPath).replace(/\\/g, '/');
+    const relPathRaw = path.relative(projectPath, absPath);
+    // 工程外文件丢弃：跨盘符时 path.relative 返回绝对路径（如 D:/CocosSofts/.../jsb.d.ts），
+    // 或向上跳出工程目录（以 .. 开头）。引擎 @types 声明、第三方库声明都在工程外，不应算工程错误。
+    if (path.isAbsolute(relPathRaw) || relPathRaw.startsWith('..')) return null;
+    const relPath = relPathRaw.replace(/\\/g, '/');
     if (relPath.includes('/node_modules/') || relPath.includes('/extensions/')) return null;
     const pos = d.file.getLineAndCharacterOfPosition(d.start);
     const message = ts.flattenDiagnosticMessageText(d.messageText, '\n');
