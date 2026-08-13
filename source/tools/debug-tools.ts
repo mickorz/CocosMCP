@@ -134,6 +134,18 @@ export class DebugTools implements ToolExecutor {
                         tsconfigPath: {
                             type: 'string',
                             description: '(可选) tsconfig 路径，省略则用项目根 tsconfig.json 或 temp/tsconfig.cocos.json'
+                        },
+                        virtualDeclarations: {
+                            type: 'array',
+                            description: '(可选) virtual declaration 列表 [{fileName, content}]，由 cocoscli 生成 runtime globals bridge，注入 Program 仅 checker 可见（不落盘）。cocos-mcp 不解析其语义，只注入。',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    fileName: { type: 'string' },
+                                    content: { type: 'string' }
+                                },
+                                required: ['fileName', 'content']
+                            }
                         }
                     }
                 }
@@ -151,7 +163,10 @@ export class DebugTools implements ToolExecutor {
             case 'debug_system':
                 return await this.handleDebugSystem(args);
             case 'run_script_diagnostics': {
-                const r = await runScriptDiagnostics(Editor.Project.path, { tsconfigPath: args.tsconfigPath });
+                const r = await runScriptDiagnostics(Editor.Project.path, {
+                    tsconfigPath: args.tsconfigPath,
+                    virtualDeclarations: args.virtualDeclarations,
+                });
                 return { success: r.ok, message: r.summary, data: r };
             }
             default:
