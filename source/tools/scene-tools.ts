@@ -20,6 +20,11 @@ export class SceneTools implements ToolExecutor {
                             type: 'string',
                             description: 'Scene file path to open (REQUIRED for open action). Use Cocos asset URLs. Examples: "db://assets/scenes/Game.scene", "db://assets/levels/Level1.scene". Get paths from get_list action first.'
                         },
+                        discardUnsaved: {
+                            type: 'boolean',
+                            default: false,
+                            description: 'open action only. true = discard unsaved changes and switch immediately (no save, no dialog). false = save current scene before switching (legacy behavior; an unsaved anonymous scene triggers a native save-as dialog that blocks the scene process).'
+                        },
                         // For create action
                         sceneName: {
                             type: 'string',
@@ -226,10 +231,13 @@ export class SceneTools implements ToolExecutor {
         }
     }
 
-    private async openScene(scenePath: string): Promise<ToolResponse> {
+    private async openScene(scenePath: string, discardUnsaved = false): Promise<ToolResponse> {
         // 失败根因: 当前场景 dirty 时 scene:open-scene 会弹原生"是否保存"确认框，
         // 阻塞 scene 进程消息循环，导致 Editor.Message.request 永久挂起，所有 scene:* 消息跟着卡死。
         // 修复: ① 切换前 save-scene 从源头避免触发对话框；② 所有 scene 消息加超时保护，永不永久挂起。
+        // 2026-08-17 补充: 未保存的匿名场景（新工程默认场景）save-scene 会弹"另存为"原生框，
+        // 这正是 CLI 切场景每次弹窗的来源。discardUnsaved=true 时跳过 save 直接 open——
+        // 3.7.3 实测 dirty 场景直接 open-scene 不弹框（脏改动被丢弃，约 300ms 完成切换）。
         const TIMEOUT_MS = 8000;
         const reqT = (scope: string, method: string, ...args: any[]) =>
             Promise.race([
@@ -247,12 +255,14 @@ export class SceneTools implements ToolExecutor {
                 return { success: false, error: `找不到场景: ${scenePath}` };
             }
 
-            // 2. 切换前保存当前场景，避免 dirty 触发原生确认对话框导致 scene 通道阻塞
+            // 2. 保存当前场景（仅保留模式；丢弃模式跳过——匿名场景 save 会弹另存为框）
             //    save-scene 对未修改场景是幂等 no-op，无副作用
-            try {
-                await reqT('scene', 'save-scene');
-            } catch (e: any) {
-                console.log(`[SceneTools] 切换前保存当前场景失败(忽略): ${e && e.message ? e.message : e}`);
+            if (!discardUnsaved) {
+                try {
+                    await reqT('scene', 'save-scene');
+                } catch (e: any) {
+                    console.log(`[SceneTools] 切换前保存当前场景失败(忽略): ${e && e.message ? e.message : e}`);
+                }
             }
 
             // 3. 切换场景（带超时保护）
@@ -260,7 +270,7 @@ export class SceneTools implements ToolExecutor {
             // 场景加载需要时间，稍等一下
             await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
-            return { success: true, message: `场景已切换: ${scenePath}`, data: { uuid, scenePath } };
+            return { success: true, message: `场景已切换: ${scenePath}`, data: { uuid, scenePath, discardUnsaved } };
         } catch (err: any) {
             return { success: false, error: err.message || String(err) };
         }
@@ -748,7 +758,7 @@ export class SceneTools implements ToolExecutor {
             case 'get_list':
                 return await this.getSceneList();
             case 'open':
-                return await this.openScene(args.scenePath);
+                return await this.openScene(args.scenePath, args.discardUnsaved === true);
             case 'save':
                 return await this.saveScene();
             case 'create':
