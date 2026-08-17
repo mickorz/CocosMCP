@@ -1,6 +1,97 @@
 import { join } from 'path';
 module.paths.push(join(Editor.App.path, 'node_modules'));
 
+/**
+ * 把引擎对象降维成可 JSON 序列化的普通对象
+ *
+ * executeCode 的返回值要过编辑器 IPC 序列化，Node/Vec3/Color 等引擎对象
+ * 不先降维会在 IPC 边界丢成空对象或直接抛错，所以这层是必须的。
+ * 规则参考 funplay-cocos-mcp scene.js 的 plain()：
+ *   Node -> {name, path, uuid, active, components}
+ *   Vec3 -> {x,y,z}；Quat -> {x,y,z,w}；Color -> {r,g,b,a}
+ *   深度上限 5，超深返回 [Array(n)] / [ClassName] 占位
+ *   循环引用返回 [Circular]；单属性读取抛错降级为 [Unserializable: msg]
+ *
+ * @param value 任意返回值
+ * @param depth 当前递归深度（入口传 0）
+ * @param seen 循环引用检测（入口传 new WeakSet()）
+ * @param cc 引擎命名空间（方法内 require('cc')，作参数传入便于 instanceof 判型）
+ */
+function plainSerialize(value: any, depth: number, seen: WeakSet<object>, cc: any): any {
+    if (value == null) {
+        return value;
+    }
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return value;
+    }
+
+    // 引擎对象判型（instanceof 用参数传入的 cc，scene.ts 顶层不 import 引擎）
+    if (cc && cc.Node && value instanceof cc.Node) {
+        return {
+            name: value.name,
+            path: getNodePath(value),
+            uuid: value.uuid,
+            active: Boolean(value.active),
+            components: (value.components || []).map((comp: any) => comp && comp.constructor ? comp.constructor.name : '').filter(Boolean)
+        };
+    }
+    if (cc && cc.Vec3 && value instanceof cc.Vec3) {
+        return { x: value.x, y: value.y, z: value.z };
+    }
+    if (cc && cc.Quat && value instanceof cc.Quat) {
+        return { x: value.x, y: value.y, z: value.z, w: value.w };
+    }
+    if (cc && cc.Color && value instanceof cc.Color) {
+        return { r: value.r, g: value.g, b: value.b, a: value.a };
+    }
+
+    if (Array.isArray(value)) {
+        if (depth >= 5) {
+            return `[Array(${value.length})]`;
+        }
+        return value.map((item) => plainSerialize(item, depth + 1, seen, cc));
+    }
+
+    if (typeof value === 'object') {
+        if (seen.has(value)) {
+            return '[Circular]';
+        }
+        seen.add(value);
+
+        if (depth >= 5) {
+            return `[${value.constructor && value.constructor.name ? value.constructor.name : 'Object'}]`;
+        }
+
+        const output: any = {};
+        for (const key of Object.keys(value)) {
+            try {
+                output[key] = plainSerialize(value[key], depth + 1, seen, cc);
+            } catch (error: any) {
+                // 单属性读取失败不炸整体（getter 抛错等），降级标注后继续
+                output[key] = `[Unserializable: ${error.message}]`;
+            }
+        }
+        return output;
+    }
+
+    return String(value);
+}
+
+/** 沿 parent 上溯到场景根拼层级路径（如 Canvas/Player） */
+function getNodePath(node: any): string {
+    const names: string[] = [];
+    let current = node;
+    while (current && current.parent) {
+        names.unshift(current.name);
+        current = current.parent;
+    }
+    // 最顶层节点（parent 为场景）也计入
+    if (current && current.name && names.length === 0) {
+        names.unshift(current.name);
+    }
+    return names.join('/');
+}
+
 export const methods: { [key: string]: (...any: any) => any } = {
     /**
      * Create a new scene
@@ -430,6 +521,55 @@ export const methods: { [key: string]: (...any: any) => any } = {
             return { success: true, message: `Component property '${property}' updated successfully` };
         } catch (error: any) {
             return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Execute arbitrary JavaScript in the scene process
+     *
+     * 参考 funplay-cocos-mcp 的 executeUserCode：
+     *   - AsyncFunction 动态求值（支持顶层 await，注入形参即执行环境）
+     *   - 注入 require / cc / Editor / scene / director / args
+     *   - 三种代码出口（按优先级）：
+     *       1. 直接 return（代码体即函数体）
+     *       2. 定义 run(env) 函数，自动调用 run({cc, Editor, scene, director, args})
+     *       3. module.exports 是函数或 {run} 对象，自动调用
+     *   - 返回值经 plainSerialize 降维（引擎对象 -> 普通 JSON），否则过不了编辑器 IPC
+     *
+     * 由 script-tools.ts 的 execute_script 工具经 execute-scene-script 调用，
+     * package.json contributions.scene.methods 必须含 executeCode 才能注册。
+     */
+    async executeCode(code: string, args?: any) {
+        try {
+            const cc = require('cc');
+            const { director } = cc;
+            const scene = director.getScene();
+            if (!scene) {
+                return { success: false, error: 'No active scene' };
+            }
+
+            const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor as any;
+            const runner = new AsyncFunction(
+                'require', 'cc', 'Editor', 'scene', 'director', 'args',
+                `
+                const module = { exports: {} };
+                const exports = module.exports;
+                ${code}
+                if (typeof run === 'function') {
+                    return await run({ cc, Editor, scene, director, args });
+                }
+                if (typeof module.exports === 'function') {
+                    return await module.exports({ cc, Editor, scene, director, args });
+                }
+                if (module.exports && typeof module.exports.run === 'function') {
+                    return await module.exports.run({ cc, Editor, scene, director, args });
+                }
+                `
+            );
+            const raw = await runner(require, cc, (global as any).Editor, scene, director, args ?? {});
+            return { success: true, data: plainSerialize(raw, 0, new WeakSet(), cc) };
+        } catch (error: any) {
+            return { success: false, error: error.message || String(error) };
         }
     }
 };

@@ -216,7 +216,8 @@
                 "setComponentProperty",
                 "getCurrentSceneInfo",
                 "getSceneHierarchy",
-                "createPrefabFromNode"
+                "createPrefabFromNode",
+                "executeCode"
             ]
         }
     }

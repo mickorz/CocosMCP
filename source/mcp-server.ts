@@ -18,6 +18,7 @@ import { SceneViewTools } from './tools/scene-view-tools';
 import { ReferenceImageTools } from './tools/reference-image-tools';
 import { AssetAdvancedTools } from './tools/asset-advanced-tools';
 import { ValidationTools } from './tools/validation-tools';
+import { ScriptTools } from './tools/script-tools';
 
 /**
  * MCPServer MCP 协议服务器（HTTP，绑定 127.0.0.1）
@@ -72,6 +73,7 @@ export class MCPServer {
             this.tools.referenceImage = new ReferenceImageTools();
             this.tools.assetAdvanced = new AssetAdvancedTools();
             this.tools.validation = new ValidationTools();
+            this.tools.script = new ScriptTools();
             console.log('[MCPServer] Tools initialized successfully');
         } catch (error) {
             console.error('[MCPServer] Error initializing tools:', error);

@@ -99,6 +99,7 @@ export class ToolManager {
             const { ReferenceImageTools } = require('./reference-image-tools');
             const { AssetAdvancedTools } = require('./asset-advanced-tools');
             const { ValidationTools } = require('./validation-tools');
+            const { ScriptTools } = require('./script-tools');
 
             // 初始化工具实例
             const tools = {
@@ -114,7 +115,8 @@ export class ToolManager {
                 sceneView: new SceneViewTools(),
                 referenceImage: new ReferenceImageTools(),
                 assetAdvanced: new AssetAdvancedTools(),
-                validation: new ValidationTools()
+                validation: new ValidationTools(),
+                script: new ScriptTools()
             };
 
             // 从每个工具类获取工具列表
