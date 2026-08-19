@@ -18,7 +18,7 @@
         "vue": "^3.1.4"
     },
     "devDependencies": {
-        "@cocos/creator-types": "^3.7.0",
+        "@cocos/creator-types": "^3.8.8",
         "@types/fs-extra": "^9.0.5",
         "@types/node": "^18.17.1",
         "@types/uuid": "^9.0.8",
