@@ -35,7 +35,9 @@ import { ScriptTools } from './tools/script-tools';
  */
 export class MCPServer {
     private settings: MCPServerSettings;
-    private httpServer: http.Server | null = null;
+    // ReturnType 写法跨 @types/node 版本兼容：18 的 Server 无泛型参数，新版要求 2 个泛型参数，
+    // 直接写 http.Server 会在编辑器内置 tsc（新版 types）下报 TS2314
+    private httpServer: ReturnType<typeof http.createServer> | null = null;
     private tools: Record<string, any> = {};
     private toolsList: ToolDefinition[] = [];
     private enabledTools: any[] = []; // 存储启用的工具列表
@@ -89,7 +91,10 @@ export class MCPServer {
 
         try {
             console.log(`[MCPServer] Starting HTTP server on port ${this.settings.port}...`);
-            this.httpServer = http.createServer(this.handleHttpRequest.bind(this));
+            // 不用 createServer(listener) 单参重载（新版 @types/node 已移除该重载，报 TS2554），
+            // 改为先建 server 再挂 request 事件，两种 types 版本都兼容
+            this.httpServer = http.createServer();
+            this.httpServer.on('request', this.handleHttpRequest.bind(this));
 
             await new Promise<void>((resolve, reject) => {
                 this.httpServer!.listen(this.settings.port, '127.0.0.1', () => {
