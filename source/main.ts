@@ -7,6 +7,8 @@ import { SkillInstaller } from './skill-installer';
 let mcpServer: MCPServer | null = null;
 let toolManager: ToolManager;
 let skillInstaller: SkillInstaller;
+// 自动打开面板是否已完成（load 延迟打开与 scene:ready 兜底共用，防止切场景时重复打开）
+let autoOpened = false;
 
 /**
  * @en Registration method for the main process of Extension
@@ -15,10 +17,23 @@ let skillInstaller: SkillInstaller;
 export const methods: { [key: string]: (...any: any) => any } = {
     /**
      * @en Open the MCP server panel
-     * @zh 打开 MCP 服务器面板
+     * @zh 打开 MCP 服务器面板（菜单/消息入口，无视 autoOpened 守卫，用户主动要求必须打开）
      */
     openPanel() {
+        // 手动打开同样视为“已打开过”，避免随后的 scene:ready 兜底把它再拉起来
+        autoOpened = true;
         Editor.Panel.open('cocos-mcp-server');
+    },
+
+    /**
+     * @en Scene ready callback: fallback to ensure the panel is visible during editor startup
+     * @zh 场景就绪回调：编辑器启动阶段的兜底，确保面板已显示（受 autoOpenPanel 设置控制）
+     */
+    onSceneReady() {
+        if (!readSettings().autoOpenPanel) {
+            return;
+        }
+        openCocosMcpPanel();
     },
 
     /**
@@ -320,31 +335,64 @@ export const methods: { [key: string]: (...any: any) => any } = {
 };
 
 /**
+ * @en Open the CocosMCP panel (idempotent: only auto-opens once per extension load)
+ * @zh 打开 CocosMCP 面板（幂等：每次扩展加载只自动打开一次）
+ */
+function openCocosMcpPanel() {
+    if (autoOpened) {
+        return;
+    }
+
+    autoOpened = true;
+
+    // Editor.Panel.open 返回 Promise，同步 try-catch 捕不到异步拒绝，需挂 catch
+    const result = Editor.Panel.open('cocos-mcp-server');
+    if (result && typeof result.then === 'function') {
+        result.then(() => {
+            console.log('[MCP插件] 面板已自动打开');
+        }).catch((err: any) => {
+            console.error('[MCP插件] 自动打开面板失败:', err);
+            // 复位标记，让后续 scene:ready 兜底还能重试
+            autoOpened = false;
+        });
+    } else {
+        console.log('[MCP插件] 面板已自动打开');
+    }
+}
+
+/**
  * @en Method Triggered on Extension Startup
  * @zh 扩展启动时触发的方法
  */
 export function load() {
     console.log('Cocos MCP Server extension loaded');
-    
+
     // 初始化工具管理器
     toolManager = new ToolManager();
 
     // 初始化技能安装器
     skillInstaller = new SkillInstaller();
-    
+
     // 读取设置
     const settings = readSettings();
     mcpServer = new MCPServer(settings);
-    
+
     // 初始化MCP服务器的工具列表
     const enabledTools = toolManager.getEnabledTools();
     mcpServer.updateEnabledTools(enabledTools);
-    
+
     // 如果设置了自动启动，则启动服务器
     if (settings.autoStart) {
         mcpServer.start().catch(err => {
             console.error('Failed to auto-start MCP server:', err);
         });
+    }
+
+    // 如果设置了自动打开面板，延迟打开（等编辑器主界面与布局恢复完成，避免启动时序竞争）
+    if (settings.autoOpenPanel) {
+        setTimeout(() => {
+            openCocosMcpPanel();
+        }, 1000);
     }
 
     // 若 MCP 配置开启了自动生成，启动时自动写 .mcp.json
@@ -360,4 +408,6 @@ export function unload() {
         mcpServer.stop();
         mcpServer = null;
     }
+    // 重置自动打开标记，扩展热重载后可再次自动打开
+    autoOpened = false;
 }

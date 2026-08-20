@@ -28,6 +28,7 @@ interface Configuration {
 interface ServerSettings {
     port: number;
     autoStart: boolean;
+    autoOpenPanel: boolean;
     debugLog: boolean;
     maxConnections: number;
 }
@@ -98,6 +99,7 @@ module.exports = Editor.Panel.define({
                             server_settings: '服务器设置',
                             port: '端口',
                             auto_start: '自动启动',
+                            auto_open_panel: '自动打开面板',
                             debug_log: '调试日志',
                             max_connections: '最大连接数',
                             connection_info: '连接信息',
@@ -191,6 +193,7 @@ module.exports = Editor.Panel.define({
                             server_settings: 'Server Settings',
                             port: 'Port',
                             auto_start: 'Auto Start',
+                            auto_open_panel: 'Auto Open Panel',
                             debug_log: 'Debug Log',
                             max_connections: 'Max Connections',
                             connection_info: 'Connection Info',
@@ -276,6 +279,7 @@ module.exports = Editor.Panel.define({
                     const settings = ref<ServerSettings>({
                         port: 3000,
                         autoStart: false,
+                        autoOpenPanel: true,
                         debugLog: false,
                         maxConnections: 10
                     });
@@ -339,6 +343,7 @@ module.exports = Editor.Panel.define({
                                 const currentSettings = {
                                     port: settings.value.port,
                                     autoStart: settings.value.autoStart,
+                                    autoOpenPanel: settings.value.autoOpenPanel,
                                     enableDebugLog: settings.value.debugLog,
                                     maxConnections: settings.value.maxConnections
                                 };
@@ -357,6 +362,7 @@ module.exports = Editor.Panel.define({
                             const settingsData = {
                                 port: settings.value.port,
                                 autoStart: settings.value.autoStart,
+                                autoOpenPanel: settings.value.autoOpenPanel,
                                 debugLog: settings.value.debugLog,
                                 maxConnections: settings.value.maxConnections
                             };
@@ -747,6 +753,7 @@ module.exports = Editor.Panel.define({
                                 settings.value = {
                                     port: serverStatus.settings.port || 3000,
                                     autoStart: serverStatus.settings.autoStart || false,
+                                    autoOpenPanel: serverStatus.settings.autoOpenPanel !== false,
                                     debugLog: serverStatus.settings.enableDebugLog || false,
                                     maxConnections: serverStatus.settings.maxConnections || 10
                                 };

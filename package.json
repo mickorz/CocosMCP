@@ -52,6 +52,11 @@
                     "openPanel"
                 ]
             },
+            "scene:ready": {
+                "methods": [
+                    "onSceneReady"
+                ]
+            },
             "open-tool-manager": {
                 "methods": [
                     "openToolManager"

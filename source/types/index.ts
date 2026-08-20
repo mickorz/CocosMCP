@@ -1,6 +1,8 @@
 export interface MCPServerSettings {
     port: number;
     autoStart: boolean;
+    // 扩展加载时是否自动打开面板（load 延迟打开 + scene:ready 兜底）
+    autoOpenPanel: boolean;
     enableDebugLog: boolean;
     allowedOrigins: string[];
     maxConnections: number;

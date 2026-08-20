@@ -5,6 +5,7 @@ import { MCPServerSettings } from './types';
 const DEFAULT_SETTINGS: MCPServerSettings = {
     port: 3001,
     autoStart: false,
+    autoOpenPanel: true,
     enableDebugLog: false,
     allowedOrigins: ['*'],
     maxConnections: 10
