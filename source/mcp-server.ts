@@ -5,6 +5,22 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { MCPServerSettings, ServerStatus, ToolDefinition } from './types';
 import { fixCommonJsonIssues } from './utils/json-utils';
+
+/**
+ * 就绪状态（/health 上报，cocoscli open 据此轮询等待工程真正可操作）
+ *
+ * 四项全真 = ready：
+ *   extensionLoaded  扩展 load() 已执行（MCPServer 只在 load 里构造，构造即置位）
+ *   serverStarted    HTTP server listen 成功
+ *   toolsRegistered  setupTools 完成（工具列表已按配置装配）
+ *   sceneReady       scene:ready 已触发（main.ts 闩锁推送，切场景重复触发只记第一次）
+ */
+export interface McpReadyState {
+    extensionLoaded: boolean;
+    serverStarted: boolean;
+    toolsRegistered: boolean;
+    sceneReady: boolean;
+}
 import { SceneTools } from './tools/scene-tools';
 import { NodeTools } from './tools/node-tools';
 import { ComponentTools } from './tools/component-tools';
@@ -43,6 +59,13 @@ export class MCPServer {
     private enabledTools: any[] = []; // 存储启用的工具列表
     // Cocos 编辑器预览服务地址（localhost 形式，启动时查询并缓存）
     private previewUrl: string = '';
+    // 就绪状态（/health 上报用；extensionLoaded 构造即置位，MCPServer 只在扩展 load 里构造）
+    private readyState: McpReadyState = {
+        extensionLoaded: true,
+        serverStarted: false,
+        toolsRegistered: false,
+        sceneReady: false,
+    };
 
     constructor(settings: MCPServerSettings) {
         this.settings = settings;
@@ -113,6 +136,9 @@ export class MCPServer {
             });
 
             this.setupTools();
+            // listen 成功且工具装配完成，server 侧就绪（sceneReady 由 main.ts 推送）
+            this.readyState.serverStarted = true;
+            this.readyState.toolsRegistered = true;
             console.log('[MCPServer] 🚀 MCP Server is ready for connections');
 
             // 启动时查询预览服务地址并缓存：保证后台预览在跑，并把真实端口（多工程时为 7457 等）缓存到 previewUrl。
@@ -182,7 +208,29 @@ export class MCPServer {
     public updateEnabledTools(enabledTools: any[]): void {
         console.log(`[MCPServer] Updating enabled tools: ${enabledTools.length} tools`);
         this.enabledTools = enabledTools;
-        this.setupTools(); // 重新设置工具列表
+        this.setupTools(); // 重新设置工具列表（server 运行中工具始终已注册，不影响 toolsRegistered）
+    }
+
+    /** 外部（main.ts）推送就绪状态，目前只有 sceneReady 会从外部置位 */
+    public updateReadyState(patch: Partial<McpReadyState>): void {
+        Object.assign(this.readyState, patch);
+    }
+
+    /** 四项全真才算完全就绪（cocoscli open 等这个） */
+    public isReady(): boolean {
+        return this.readyState.extensionLoaded
+            && this.readyState.serverStarted
+            && this.readyState.toolsRegistered
+            && this.readyState.sceneReady;
+    }
+
+    /** 首个未完成阶段（/health 的 phase 字段；全就绪返回 ready） */
+    public getReadyPhase(): string {
+        if (!this.readyState.extensionLoaded) return 'extensionLoading';
+        if (!this.readyState.serverStarted) return 'serverStarting';
+        if (!this.readyState.toolsRegistered) return 'toolsRegistering';
+        if (!this.readyState.sceneReady) return 'sceneLoading';
+        return 'ready';
     }
 
     public getSettings(): MCPServerSettings {
@@ -209,8 +257,18 @@ export class MCPServer {
             if (pathname === '/mcp' && req.method === 'POST') {
                 await this.handleMCPRequest(req, res);
             } else if (pathname === '/health' && req.method === 'GET') {
+                // status/tools 保持旧结构（旧版 cocoscli 只看状态码，不受影响）；
+                // 新增 ready/phase/detail 供 cocoscli open 轮询等待工程真正就绪。
+                // 旧版 CocosMCP 无 ready 字段，cocoscli 据此降级为「HTTP 可达即就绪」。
                 res.writeHead(200);
-                res.end(JSON.stringify({ status: 'ok', tools: this.toolsList.length }));
+                res.end(JSON.stringify({
+                    status: 'ok',
+                    tools: this.toolsList.length,
+                    version: this.getVersion(),
+                    ready: this.isReady(),
+                    phase: this.getReadyPhase(),
+                    detail: { ...this.readyState },
+                }));
             } else if (pathname?.startsWith('/api/') && req.method === 'POST') {
                 await this.handleSimpleAPIRequest(req, res, pathname);
             } else if (pathname === '/api/tools' && req.method === 'GET') {
@@ -324,6 +382,9 @@ export class MCPServer {
             this.httpServer = null;
             console.log('[MCPServer] HTTP server stopped');
         }
+        // server 侧状态复位；sceneReady 是扩展级事实（scene:ready 闩锁），重启 server 不变假
+        this.readyState.serverStarted = false;
+        this.readyState.toolsRegistered = false;
     }
 
     public getStatus(): ServerStatus {

@@ -9,6 +9,9 @@ let toolManager: ToolManager;
 let skillInstaller: SkillInstaller;
 // 自动打开面板是否已完成（load 延迟打开与 scene:ready 兜底共用，防止切场景时重复打开）
 let autoOpened = false;
+// scene:ready 闩锁：切场景会重复触发，只记第一次；/health 的 ready 依赖它，
+// 重建 MCPServer（改设置）后要把闩锁重新推送给新实例，否则 ready 永远 false
+let sceneReady = false;
 
 /**
  * @en Registration method for the main process of Extension
@@ -30,6 +33,14 @@ export const methods: { [key: string]: (...any: any) => any } = {
      * @zh 场景就绪回调：编辑器启动阶段的兜底，确保面板已显示（受 autoOpenPanel 设置控制）
      */
     onSceneReady() {
+        // 闩锁只记第一次；同时推送给 MCPServer（/health 的 ready 四项之一）
+        if (!sceneReady) {
+            sceneReady = true;
+            if (mcpServer) {
+                mcpServer.updateReadyState({ sceneReady: true });
+            }
+            console.log('[MCP插件] 场景就绪（scene:ready），工程完全可操作');
+        }
         if (!readSettings().autoOpenPanel) {
             return;
         }
@@ -84,12 +95,11 @@ export const methods: { [key: string]: (...any: any) => any } = {
         saveSettings(settings);
         if (mcpServer) {
             mcpServer.stop();
-            mcpServer = new MCPServer(settings);
-            mcpServer.start();
-        } else {
-            mcpServer = new MCPServer(settings);
-            mcpServer.start();
         }
+        mcpServer = new MCPServer(settings);
+        // 重建实例会把 sceneReady 带丢，先补推闩锁再启动，否则 /health 永远卡在 sceneLoading
+        mcpServer.updateReadyState({ sceneReady });
+        mcpServer.start();
     },
 
     /**
@@ -410,4 +420,6 @@ export function unload() {
     }
     // 重置自动打开标记，扩展热重载后可再次自动打开
     autoOpened = false;
+    // 重置场景就绪闩锁，扩展热重载后 scene:ready 可再次触发
+    sceneReady = false;
 }
