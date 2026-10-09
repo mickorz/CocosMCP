@@ -1,19 +1,25 @@
 'use strict';
 
 /**
- * 脚本诊断 diagnostics TypeScript 编译检查（Compiler API 版）
+ * 脚本诊断 diagnostics TypeScript 编译检查（Compiler API + Worker Threads 版）
  *
  * 用编辑器内置 typescript 的 Compiler API（ts.createProgram + getSyntacticDiagnostics +
  * getSemanticDiagnostics）收全量诊断，避免 tsc CLI 的 syntactic 短路（tsc CLI 有语法错误
  * 就不调 getSemanticDiagnostics，导致其他文件类型错误全消失）。
  *
+ * 编译检查在 worker_threads 独立线程执行，不阻塞 Cocos Creator 主线程事件循环。
+ * worker_threads 不可用时回退到同步执行（会短暂阻塞）。
+ *
  * 流程：
  *   runScriptDiagnostics
- *     ├─ findTypescriptModule 找编辑器内置 typescript 模块（require 它）
- *     ├─ readConfigFile + parseJsonConfigFileContent 解析 tsconfig（含 extends）
- *     ├─ createProgram
- *     ├─ getSyntacticDiagnostics + getSemanticDiagnostics（天然分类，不短路）
- *     └─ toDiagnosticItem 转 DiagnosticItem（带 category + snippet）
+ *     ├─ findTsConfig 找 tsconfig
+ *     ├─ findTypescriptModule 找编辑器内置 typescript 模块
+ *     ├─ Worker 线程执行（DIAGNOSTICS_WORKER_CODE）
+ *     │     ├─ readConfigFile + parseJsonConfigFileContent 解析 tsconfig
+ *     │     ├─ createProgram
+ *     │     ├─ getSyntacticDiagnostics + getSemanticDiagnostics（天然分类，不短路）
+ *     │     └─ toDiagnosticItem 转 DiagnosticItem（带 category + snippet）
+ *     └─ postMessage 回结果，主线程组装 DiagnosticsResult 返回
  *
  * 关键：getSyntacticDiagnostics 与 getSemanticDiagnostics 分别调用，即使存在 syntactic
  *      错误，semantic 仍会照常返回其他文件的类型错误（一次拿全语法+类型）。
@@ -120,7 +126,7 @@ function toDiagnosticItem(d: any, category: DiagnosticCategory, projectPath: str
     // 或向上跳出工程目录（以 .. 开头）。引擎 @types 声明、第三方库声明都在工程外，不应算工程错误。
     if (path.isAbsolute(relPathRaw) || relPathRaw.startsWith('..')) return null;
     const relPath = relPathRaw.replace(/\\/g, '/');
-    if (relPath.includes('/node_modules/') || relPath.includes('/extensions/')) return null;
+    if (relPath.includes('/node_modules/') || relPath.includes('/extensions/') || relPath.startsWith('node_modules/') || relPath.startsWith('extensions/')) return null;
     const pos = d.file.getLineAndCharacterOfPosition(d.start);
     const message = ts.flattenDiagnosticMessageText(d.messageText, '\n');
     return {
@@ -163,6 +169,33 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
         return { ok: false, tool: 'typescript', tsconfigPath, exitCode: 0, syntacticCount: 0, semanticCount: 0, summary: 'TypeScript module was not found in the Cocos project or editor installation.', diagnostics: [] };
     }
 
+    const virtualDecls = options.virtualDeclarations ?? [];
+    const startTime = Date.now();
+
+    // 尝试用持久 worker_threads 在独立线程跑编译检查，避免阻塞 Cocos Creator 主线程
+    try {
+        const workerResult = await runDiagnosticsInWorker(tsModulePath, tsconfigPath, projectPath, virtualDecls);
+
+        const compileTime = Date.now() - startTime;
+        return {
+            ok: workerResult.ok,
+            tool: 'typescript',
+            tsconfigPath,
+            typescriptPath: tsModulePath,
+            exitCode: workerResult.ok ? 0 : 1,
+            syntacticCount: workerResult.syntacticCount,
+            semanticCount: workerResult.semanticCount,
+            compileTime,
+            summary: workerResult.summary,
+            diagnostics: workerResult.diagnostics || [],
+            environmentErrors: workerResult.environmentErrors || [],
+        };
+    } catch (e: any) {
+        // worker_threads 不可用时，回退到同步执行（会短暂阻塞主线程）
+        console.log('[diagnostics] worker unavailable, falling back to sync:', e && e.message);
+    }
+
+    // 回退：同步执行（原有逻辑）
     let ts: any;
     try {
         ts = require(tsModulePath);
@@ -170,7 +203,223 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
         return { ok: false, tool: 'typescript', tsconfigPath, exitCode: 0, syntacticCount: 0, semanticCount: 0, summary: `Failed to require typescript module (${tsModulePath}): ${e && e.message}`, diagnostics: [] };
     }
 
-    const startTime = Date.now();
+    return runDiagnosticsSync(ts, tsModulePath, tsconfigPath, projectPath, virtualDecls, startTime);
+}
+
+// ==================== 持久 Worker 复用 ====================
+
+// 缓存的 Worker 实例 + 已加载的 tsModulePath（tsModulePath 变化时重建 Worker）
+let _diagnosticsWorker: any = null;
+let _diagnosticsWorkerTsPath: string | null = null;
+let _diagnosticsReqId = 0;
+
+/**
+ * 获取或创建持久 Worker（复用已加载的 TypeScript 实例，避免每次调用都重新 require）
+ * tsModulePath 变化时销毁旧 Worker 创建新的（切换编辑器版本等场景）
+ */
+function getDiagnosticsWorker(tsModulePath: string): any {
+    if (_diagnosticsWorker && _diagnosticsWorkerTsPath === tsModulePath) {
+        return _diagnosticsWorker;
+    }
+    // 路径变化或首次创建：销毁旧的
+    if (_diagnosticsWorker) {
+        try { _diagnosticsWorker.terminate(); } catch {}
+        _diagnosticsWorker = null;
+    }
+    const { Worker } = require('worker_threads');
+    _diagnosticsWorker = new Worker(PERSISTENT_WORKER_CODE, { eval: true });
+    _diagnosticsWorkerTsPath = tsModulePath;
+    _diagnosticsWorker.on('error', (err: Error) => {
+        console.error('[diagnostics] worker fatal error:', err.message);
+        _diagnosticsWorker = null;
+        _diagnosticsWorkerTsPath = null;
+    });
+    return _diagnosticsWorker;
+}
+
+/**
+ * 在持久 Worker 中执行编译检查
+ * 通过 reqId 区分并发请求，worker 保持存活复用 TypeScript 实例
+ */
+function runDiagnosticsInWorker(tsModulePath: string, tsconfigPath: string, projectPath: string, virtualDecls: VirtualDeclaration[]): Promise<any> {
+    return new Promise((resolve, reject) => {
+        let worker: any;
+        try {
+            worker = getDiagnosticsWorker(tsModulePath);
+        } catch (e) {
+            reject(e);
+            return;
+        }
+        const reqId = ++_diagnosticsReqId;
+        const timeout = setTimeout(() => {
+            reject(new Error('Diagnostics worker timed out (60s)'));
+        }, 60000);
+        const onMessage = (msg: any) => {
+            if (msg && msg.reqId === reqId) {
+                worker.off('message', onMessage);
+                clearTimeout(timeout);
+                resolve(msg);
+            }
+        };
+        worker.on('message', onMessage);
+        worker.postMessage({ reqId, tsModulePath, tsconfigPath, projectPath, virtualDecls });
+    });
+}
+
+// ==================== 持久 Worker 代码（监听 message，复用已加载的 ts）====================
+
+/**
+ * 持久 Worker：启动后保持存活，通过 postMessage 接收请求
+ * TypeScript 模块只在首次请求或路径变化时加载一次，后续请求直接复用
+ */
+const PERSISTENT_WORKER_CODE = `
+var parentPort = require('worker_threads').parentPort;
+var fs = require('fs');
+var path = require('path');
+var ts = null;
+var tsModulePath = null;
+
+function readSnippet(filePath, line, contextLines) {
+    contextLines = contextLines || 1;
+    try {
+        var content = fs.readFileSync(filePath, 'utf-8');
+        var arr = content.split(/\\r?\\n/);
+        var start = Math.max(0, line - 1 - contextLines);
+        var end = Math.min(arr.length, line + contextLines);
+        return arr.slice(start, end).join('\\n');
+    } catch (e) { return ''; }
+}
+
+function toDiagnosticItem(d, category, projectPath, ts) {
+    if (!d.file || d.start == null) return null;
+    var absPath = d.file.fileName;
+    var relPathRaw = path.relative(projectPath, absPath);
+    if (path.isAbsolute(relPathRaw) || relPathRaw.startsWith('..')) return null;
+    var relPath = relPathRaw.replace(/\\\\/g, '/');
+    if (relPath.includes('/node_modules/') || relPath.includes('/extensions/') || relPath.startsWith('node_modules/') || relPath.startsWith('extensions/')) return null;
+    var pos = d.file.getLineAndCharacterOfPosition(d.start);
+    var message = ts.flattenDiagnosticMessageText(d.messageText, '\\n');
+    return {
+        file: relPath,
+        line: pos.line + 1,
+        column: pos.character + 1,
+        code: 'TS' + d.code,
+        message: message,
+        category: category,
+        snippet: readSnippet(absPath, pos.line + 1)
+    };
+}
+
+function runDiagnostics(data) {
+    var tsconfigPath = data.tsconfigPath;
+    var projectPath = data.projectPath;
+    var virtualDecls = data.virtualDecls || [];
+
+    var cfg = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
+    if (cfg.error) {
+        return { ok: false, summary: 'Failed to read tsconfig: ' + ts.flattenDiagnosticMessageText(cfg.error.messageText, '\\n'), diagnostics: [], syntacticCount: 0, semanticCount: 0, environmentErrors: [] };
+    }
+    var parsed = ts.parseJsonConfigFileContent(cfg.config, ts.sys, path.dirname(tsconfigPath), {}, tsconfigPath);
+    var programOptions = Object.assign({}, parsed.options, { noEmit: true });
+
+    var virtualMap = new Map();
+    for (var i = 0; i < virtualDecls.length; i++) {
+        virtualMap.set(virtualDecls[i].fileName, virtualDecls[i].content);
+    }
+    var virtualFileNames = virtualDecls.map(function(v) { return v.fileName; });
+    var isVirtual = function(fn) { return virtualMap.has(fn); };
+
+    var program;
+    if (virtualDecls.length > 0) {
+        var host = ts.createCompilerHost(programOptions);
+        var origFileExists = host.fileExists.bind(host);
+        var origReadFile = host.readFile.bind(host);
+        var origGetSourceFile = host.getSourceFile.bind(host);
+        host.fileExists = function(fn) { return isVirtual(fn) || origFileExists(fn); };
+        host.readFile = function(fn) { return isVirtual(fn) ? virtualMap.get(fn) : origReadFile(fn); };
+        host.getSourceFile = function(fn, lv, err, scp) {
+            if (isVirtual(fn)) { return ts.createSourceFile(fn, virtualMap.get(fn), lv, true, ts.ScriptKind.TS); }
+            return origGetSourceFile(fn, lv, err, scp);
+        };
+        program = ts.createProgram({ rootNames: parsed.fileNames.concat(virtualFileNames), options: programOptions, host: host });
+    } else {
+        program = ts.createProgram({ rootNames: parsed.fileNames, options: programOptions });
+    }
+
+    var syntactic = program.getSyntacticDiagnostics();
+    var semantic = program.getSemanticDiagnostics();
+
+    var virtualSet = new Set(virtualFileNames);
+    var isVirtualDiag = function(d) { return !!(d.file && virtualSet.has(d.file.fileName)); };
+    var environmentErrors = [];
+    var allDiags = syntactic.concat(semantic);
+    for (var i = 0; i < allDiags.length; i++) {
+        if (isVirtualDiag(allDiags[i])) {
+            var d = allDiags[i];
+            if (d.file) {
+                var pos = d.file.getLineAndCharacterOfPosition(d.start || 0);
+                environmentErrors.push({
+                    file: d.file.fileName,
+                    line: pos.line + 1,
+                    column: pos.character + 1,
+                    code: 'TS' + d.code,
+                    message: ts.flattenDiagnosticMessageText(d.messageText, '\\n'),
+                    category: 'semantic'
+                });
+            }
+        }
+    }
+
+    var bizSyn = syntactic;
+    var bizSem = semantic;
+    if (virtualDecls.length > 0 && environmentErrors.length > 0) {
+        var rollbackProgram = ts.createProgram({ rootNames: parsed.fileNames, options: programOptions });
+        bizSyn = rollbackProgram.getSyntacticDiagnostics();
+        bizSem = rollbackProgram.getSemanticDiagnostics();
+    }
+
+    var diagnostics = [];
+    var synCount = 0, semCount = 0;
+    for (var i = 0; i < bizSyn.length; i++) {
+        if (isVirtualDiag(bizSyn[i])) continue;
+        var item = toDiagnosticItem(bizSyn[i], 'syntactic', projectPath, ts);
+        if (item) { diagnostics.push(item); synCount++; }
+    }
+    for (var i = 0; i < bizSem.length; i++) {
+        if (isVirtualDiag(bizSem[i])) continue;
+        var item = toDiagnosticItem(bizSem[i], 'semantic', projectPath, ts);
+        if (item) { diagnostics.push(item); semCount++; }
+    }
+
+    var ok = diagnostics.length === 0 && environmentErrors.length === 0;
+    var summary = ok
+        ? 'TypeScript diagnostics completed successfully with no errors.'
+        : environmentErrors.length > 0
+            ? 'Found ' + synCount + ' syntactic and ' + semCount + ' semantic error(s); plus ' + environmentErrors.length + ' Type Environment Resolution error(s) (bridge rolled back, business diagnostics use no-bridge program).'
+            : 'Found ' + synCount + ' syntactic and ' + semCount + ' semantic TypeScript error(s).';
+
+    return { ok: ok, summary: summary, diagnostics: diagnostics, syntacticCount: synCount, semanticCount: semCount, environmentErrors: environmentErrors };
+}
+
+// 持久监听 message：首次请求加载 TypeScript，后续请求直接复用
+parentPort.on('message', function(data) {
+    try {
+        if (!ts || tsModulePath !== data.tsModulePath) {
+            ts = require(data.tsModulePath);
+            tsModulePath = data.tsModulePath;
+        }
+        var result = runDiagnostics(data);
+        result.reqId = data.reqId;
+        parentPort.postMessage(result);
+    } catch (e) {
+        parentPort.postMessage({ reqId: data.reqId, ok: false, summary: 'Worker error: ' + (e && e.message ? e.message : String(e)), diagnostics: [], syntacticCount: 0, semanticCount: 0, environmentErrors: [] });
+    }
+});
+`;
+
+// ==================== 同步回退（worker_threads 不可用时）====================
+
+function runDiagnosticsSync(ts: any, tsModulePath: string, tsconfigPath: string, projectPath: string, virtualDecls: VirtualDeclaration[], startTime: number): DiagnosticsResult {
     const cfg = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
     if (cfg.error) {
         const msg = ts.flattenDiagnosticMessageText(cfg.error.messageText, '\n');
@@ -179,9 +428,6 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
     const parsed = ts.parseJsonConfigFileContent(cfg.config, ts.sys, path.dirname(tsconfigPath), {}, tsconfigPath);
     const programOptions = { ...parsed.options, noEmit: true };
 
-    // P2: 通用 VirtualDeclaration Host（仅在有 virtualDeclarations 时启用）
-    // cocos-mcp 不含 pfbm/runtimeGlobals 业务知识，只接收 {fileName, content} 注入 Program
-    const virtualDecls: VirtualDeclaration[] = options.virtualDeclarations ?? [];
     const virtualMap = new Map<string, string>(virtualDecls.map(v => [v.fileName, v.content]));
     const virtualFileNames = Array.from(virtualMap.keys());
     const isVirtual = (fn: string) => virtualMap.has(fn);
@@ -189,8 +435,6 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
 
     let program: any;
     if (virtualDecls.length > 0) {
-        // 只包一层 createCompilerHost，override virtual 文件的 fileExists/readFile/getSourceFile
-        //（官方 Compiler API 支持自定义 Host，正常扩展方式）
         const host = ts.createCompilerHost(programOptions);
         const origFileExists = host.fileExists.bind(host);
         const origReadFile = host.readFile.bind(host);
@@ -208,13 +452,9 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
         program = ts.createProgram({ rootNames: parsed.fileNames, options: programOptions });
     }
 
-    // 分类取诊断（Compiler API 不短路：syntactic 错误存在时 semantic 仍返回其他文件类型错误）
     const syntactic = program.getSyntacticDiagnostics();
     const semantic = program.getSemanticDiagnostics();
 
-    // P2 分层：virtual declaration 自身 diagnostics 单独收集（Type Environment Resolution）
-    // virtual 文件的诊断（如 bridge 里 import(...) 解析失败 TS2307）不混业务 real/noise，
-    // 而是作为 environmentErrors 单独报告
     const virtualSet = new Set(virtualFileNames);
     const isVirtualDiag = (d: any) => !!(d.file && virtualSet.has(d.file.fileName));
     const environmentErrors: DiagnosticItem[] = [];
@@ -225,13 +465,6 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
         }
     }
 
-    // P2 Type Environment Commit / Rollback（fail closed，事务语义，非 fallback）
-    //   生成 bridge → 验证（environmentErrors）
-    //     成功（=0）→ commit：业务 diagnostics 用带 bridge 的 Program（pfbm 被 bridge 解决，得强类型）
-    //     失败（>0）→ rollback：重跑无 bridge 的 Program，业务 diagnostics 用无 bridge 结果
-    //                       （pfbm 等回到 TS2304，绝不因 declare const pfbm 污染而 implicit any 假阴性）
-    //   P2 整体 commit/rollback；未来多 bridge 可逐项验证（RuntimeGlobalResolution {name, validated, diagnostics}），
-    //   一个坏 bridge 不拖累好的——当前整体回退足够（P2 仅 pfbm）。仅失败路径多一次 createProgram，成功路径零额外开销。
     let bizSyn: any = syntactic;
     let bizSem: any = semantic;
     if (virtualDecls.length > 0 && environmentErrors.length > 0) {
@@ -240,7 +473,6 @@ export async function runScriptDiagnostics(projectPath: string, options: { tscon
         bizSem = rollbackProgram.getSemanticDiagnostics();
     }
 
-    // 业务 diagnostics（排除 virtual 文件；rollback 时本就无 virtual，此判断为防御）
     const diagnostics: DiagnosticItem[] = [];
     let synCount = 0, semCount = 0;
     for (const d of bizSyn) {

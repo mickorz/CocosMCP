@@ -490,6 +490,7 @@
                         '<span class="result-title">Result</span>' +
                         '<span class="result-meta" id="resultMeta"></span>' +
                         '<button class="secondary" id="copyResultBtn" style="padding:4px 10px;font-size:11px;display:none;" onclick="copyResult()">Copy</button>' +
+                        '<button class="secondary" id="saveResultBtn" style="padding:4px 10px;font-size:11px;display:none;" onclick="saveResult()">Save</button>' +
                     '</div>' +
                     '<div class="result-container" id="resultContainer">' +
                         '<span class="result-empty">Click Execute to run this tool</span>' +
@@ -712,6 +713,8 @@
 
                 const copyBtn = document.getElementById('copyResultBtn');
                 if (copyBtn) copyBtn.style.display = '';
+                const saveBtn = document.getElementById('saveResultBtn');
+                if (saveBtn) saveBtn.style.display = '';
 
                 if (success) {
                     resultContainer.className = 'result-container success';
@@ -726,6 +729,8 @@
                 lastResultData = { error: e.message };
                 const copyBtn = document.getElementById('copyResultBtn');
                 if (copyBtn) copyBtn.style.display = '';
+                const saveBtn = document.getElementById('saveResultBtn');
+                if (saveBtn) saveBtn.style.display = '';
                 resultContainer.className = 'result-container error';
                 resultContainer.innerHTML = '<span style="color:#da3633;">Error: ' + e.message + '</span>';
             } finally {
@@ -789,6 +794,32 @@
             }).catch(function() {
                 alert('Copy failed');
             });
+        }
+
+        // 保存 Result 到本地 JSON 文件
+        function saveResult() {
+            if (lastResultData === null) return;
+            var toolName = selectedTool ? selectedTool.name : 'result';
+            var now = new Date();
+            var pad = function(n) { return String(n).padStart(2, '0'); };
+            var ts = now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '_' + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
+            var fileName = toolName + '_' + ts + '.json';
+            var text = JSON.stringify(lastResultData, null, 2);
+            var blob = new Blob([text], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            var btn = document.getElementById('saveResultBtn');
+            if (btn) {
+                var orig = btn.textContent;
+                btn.textContent = 'Saved';
+                setTimeout(function() { btn.textContent = orig; }, 1500);
+            }
         }
 
         // 历史记录
