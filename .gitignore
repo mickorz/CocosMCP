@@ -90,3 +90,7 @@ dist/examples/
 
 # CodeAgents（SkillAutoGenerate 生成产物 + SkillCustomers 手写 skill）进 git 跟踪，换机器/clone 也有 skill
 # 注：SkillAutoGenerate 含端口渲染（不同机器端口可能不同）；若只想跟踪手写 skill，可改为忽略 CodeAgents/SkillAutoGenerate/
+
+# 开发过程目录（不进 git）
+dev-docs/
+dev-examples/
