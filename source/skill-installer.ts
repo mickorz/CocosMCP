@@ -24,7 +24,7 @@ const SKILL_PLATFORMS: Record<SkillPlatformKey, { label: string; dir: string }> 
     gemini: { label: 'Gemini CLI', dir: '.gemini/skills' },
     codex: { label: 'Codex', dir: '.codex/skills' },
     antigravity: { label: 'Antigravity', dir: '.antigravity/skills' },
-    opencode: { label: 'opencode', dir: '.opencode/skills' },
+    opencode: { label: 'opencode', dir: '.opencode/skills/cocoscli' },
 };
 
 // 13 个技能名（目录名须与 frontmatter name 一致，小写字母+连字符，遵守 opencode 约束）

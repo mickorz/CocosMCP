@@ -104,6 +104,7 @@ module.exports = Editor.Panel.define({
                             max_connections: '最大连接数',
                             connection_info: '连接信息',
                             http_url: 'HTTP URL',
+                            open_tester: '打开测试页面',
                             copy: '复制',
                             save_settings: '保存设置',
                             // 工具管理页
@@ -198,6 +199,7 @@ module.exports = Editor.Panel.define({
                             max_connections: 'Max Connections',
                             connection_info: 'Connection Info',
                             http_url: 'HTTP URL',
+                            open_tester: 'Open Tester',
                             copy: 'Copy',
                             save_settings: 'Save Settings',
                             // 工具管理页
@@ -392,6 +394,17 @@ module.exports = Editor.Panel.define({
                             await Editor.Message.request('cocos-mcp-server', 'open-external-url', httpUrl.value);
                         } catch (error) {
                             console.error('[Vue App] Failed to open http url:', error);
+                        }
+                    };
+
+                    // 用默认浏览器打开测试页面（HTTP URL + /skill-tester）
+                    const openTester = async () => {
+                        if (!httpUrl.value) return;
+                        const testerUrl = httpUrl.value + '/skill-tester';
+                        try {
+                            await Editor.Message.request('cocos-mcp-server', 'open-external-url', testerUrl);
+                        } catch (error) {
+                            console.error('[Vue App] Failed to open tester:', error);
                         }
                     };
 
@@ -836,6 +849,7 @@ module.exports = Editor.Panel.define({
                         saveSettings,
                         openPreviewUrl,
                         openHttpUrl,
+                        openTester,
                         uninstallExtension,
                         cancelUninstall,
                         confirmUninstall,

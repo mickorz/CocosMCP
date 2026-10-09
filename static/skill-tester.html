@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cocos MCP Tool Tester</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+            padding: 15px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 15px; color: #58a6ff; font-size: 20px; }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 12px;
+        }
+        .status-indicator { display: flex; align-items: center; gap: 8px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #238636; }
+        .status-dot.offline { background: #da3633; }
+
+        .search-box { margin-bottom: 10px; }
+        .search-input {
+            width: 100%;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: #c9d1d9;
+            font-family: inherit;
+            font-size: 13px;
+        }
+        .search-input:focus { outline: none; border-color: #58a6ff; }
+
+        .tab-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+        }
+        .tab-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #7d8590;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.15s;
+        }
+        .tab-btn:hover { background: #30363d; color: #c9d1d9; }
+        .tab-btn.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+        .tab-btn .count { margin-left: 5px; font-size: 10px; opacity: 0.7; }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 15px;
+        }
+        @media (max-width: 900px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        .tools-panel {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .tools-list { padding: 8px; }
+        .tool-item {
+            background: #21262d;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            padding: 8px 10px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+        }
+        .tool-item:hover { background: #30363d; border-color: #58a6ff; }
+        .tool-item.selected { background: #1f6feb33; border-color: #58a6ff; }
+        .tool-item .tool-name { color: #c9d1d9; }
+        .tool-item .tool-desc { color: #7d8590; font-size: 11px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .detail-panel {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        .detail-header { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #30363d; }
+        .detail-name { font-size: 16px; color: #58a6ff; margin-bottom: 3px; }
+        .detail-category { font-size: 11px; color: #7d8590; }
+        .detail-desc { font-size: 12px; color: #c9d1d9; line-height: 1.5; margin-top: 8px; padding: 8px; background: #21262d; border-radius: 4px; }
+
+        .param-group { margin-bottom: 12px; }
+        .param-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .param-label-text { color: #c9d1d9; font-size: 12px; }
+        .param-label-type { color: #7d8590; font-size: 11px; font-style: italic; }
+        .param-label .required { color: #da3633; font-size: 10px; }
+        .param-label .optional { color: #238636; font-size: 10px; }
+        .param-input {
+            width: 100%;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            padding: 6px 8px;
+            color: #c9d1d9;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        .param-input:focus { outline: none; border-color: #58a6ff; }
+        .param-desc { color: #7d8590; font-size: 11px; margin-top: 3px; }
+        .param-enum { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+        .enum-chip {
+            background: #21262d;
+            border: 1px solid #30363d;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+        .enum-chip:hover { background: #30363d; border-color: #58a6ff; }
+
+        .editor-toggle { display: flex; gap: 8px; margin-bottom: 10px; }
+        .toggle-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #7d8590;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .toggle-btn.active { background: #30363d; color: #c9d1d9; border-color: #58a6ff; }
+        .json-textarea {
+            width: 100%;
+            min-height: 100px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            padding: 8px;
+            color: #c9d1d9;
+            font-family: inherit;
+            font-size: 11px;
+            resize: vertical;
+        }
+        .json-textarea:focus { outline: none; border-color: #58a6ff; }
+
+        .action-bar { display: flex; gap: 8px; margin-top: 15px; padding-top: 12px; border-top: 1px solid #30363d; }
+        button {
+            background: #238636;
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: inherit;
+            transition: background 0.2s;
+        }
+        button:hover { background: #2ea043; }
+        button:disabled { background: #30363d; cursor: not-allowed; }
+        button.secondary { background: #30363d; }
+        button.secondary:hover { background: #3c444d; }
+        button.primary { background: #1f6feb; }
+        button.primary:hover { background: #388bfd; }
+
+        .result-panel { margin-top: 15px; }
+        .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .result-title { color: #58a6ff; font-size: 12px; }
+        .result-meta { color: #7d8590; font-size: 11px; }
+        .result-container {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            padding: 10px;
+            min-height: 80px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 11px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .result-container.success { border-color: #238636; }
+        .result-container.error { border-color: #da3633; }
+        .result-loading { color: #7d8590; }
+        .result-empty { color: #7d8590; text-align: center; padding: 20px; }
+
+        .json-key { color: #79c0ff; }
+        .json-string { color: #a5d6ff; }
+        .json-number { color: #79c0ff; }
+        .json-boolean { color: #ff7b72; }
+        .json-null { color: #7d8590; }
+
+        .history-panel {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 15px;
+        }
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .history-title { color: #58a6ff; font-size: 12px; }
+        .history-list { max-height: 150px; overflow-y: auto; }
+        .history-item {
+            background: #21262d;
+            border-radius: 3px;
+            padding: 6px 8px;
+            margin-bottom: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .history-item:hover { background: #30363d; }
+        .history-item .name { color: #58a6ff; }
+        .history-item .time { color: #7d8590; float: right; }
+        .history-item .status { margin-top: 2px; }
+        .history-item .status.success { color: #238636; }
+        .history-item .status.error { color: #da3633; }
+
+        .empty-state { text-align: center; padding: 30px; color: #7d8590; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #161b22; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-content {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 90%;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .modal-title { color: #58a6ff; font-size: 14px; }
+        .modal-close { background: none; border: none; color: #7d8590; font-size: 20px; cursor: pointer; padding: 0; }
+        .modal-close:hover { color: #c9d1d9; }
+        .detail-section { margin-bottom: 15px; }
+        .detail-section-title { color: #7d8590; font-size: 11px; margin-bottom: 5px; text-transform: uppercase; }
+        .detail-section-content { background: #0d1117; border-radius: 4px; padding: 10px; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Cocos MCP Tool Tester</h1>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+            <div>
+                <span id="toolsCount">0 tools</span>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" class="search-input" id="searchInput" placeholder="Search tools..." oninput="filterTools()">
+        </div>
+
+        <div class="tab-bar" id="tabBar"></div>
+
+        <div class="main-grid">
+            <div class="tools-panel">
+                <div class="tools-list" id="toolsList">
+                    <div class="empty-state">Loading tools...</div>
+                </div>
+            </div>
+
+            <div class="detail-panel" id="detailPanel">
+                <div class="empty-state">Select a tool from the left panel</div>
+            </div>
+        </div>
+
+        <div class="history-panel">
+            <div class="history-header">
+                <span class="history-title">Execution History</span>
+                <button class="secondary" style="padding:4px 8px;font-size:11px;" onclick="clearHistory()">Clear</button>
+            </div>
+            <div class="history-list" id="historyList">
+                <div class="empty-state" style="padding:10px;">No history</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="detailModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title" id="modalTitle">Request Detail</span>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="detail-section">
+                <div class="detail-section-title">Request</div>
+                <div class="detail-section-content" id="modalRequest"></div>
+            </div>
+            <div class="detail-section">
+                <div class="detail-section-title">Response</div>
+                <div class="detail-section-content" id="modalResponse"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 状态
+        let tools = [];
+        let toolsByCategory = {};
+        let selectedTool = null;
+        let currentCategory = null;
+        let executionHistory = [];
+        let isJsonMode = false;
+        let paramMemory = {};
+        let lastResultData = null;
+
+        // 类别中文映射
+        const CATEGORY_LABELS = {
+            scene: 'Scene',
+            node: 'Node',
+            component: 'Component',
+            prefab: 'Prefab',
+            project: 'Project',
+            debug: 'Debug',
+            preferences: 'Preferences',
+            server: 'Server',
+            broadcast: 'Broadcast',
+            sceneView: 'SceneView',
+            referenceImage: 'ReferenceImage',
+            asset: 'Asset',
+            assetAdvanced: 'AssetAdvanced',
+            validation: 'Validation',
+            script: 'Script'
+        };
+
+        document.addEventListener('DOMContentLoaded', init);
+
+        async function init() {
+            loadFromStorage();
+            await loadTools();
+            renderTabs();
+            renderHistory();
+        }
+
+        // 从 /skill-tester/api/tools 加载工具列表
+        async function loadTools() {
+            try {
+                const res = await fetch('/skill-tester/api/tools');
+                const data = await res.json();
+                toolsByCategory = data.categories || {};
+                tools = [];
+
+                for (const [cat, catTools] of Object.entries(toolsByCategory)) {
+                    catTools.forEach(t => tools.push({ ...t, category: cat }));
+                }
+
+                document.getElementById('toolsCount').textContent = tools.length + ' tools';
+                document.getElementById('statusDot').classList.remove('offline');
+                document.getElementById('statusText').textContent = 'Connected';
+            } catch (e) {
+                document.getElementById('statusDot').classList.add('offline');
+                document.getElementById('statusText').textContent = 'Error: ' + e.message;
+            }
+        }
+
+        function renderTabs() {
+            const tabBar = document.getElementById('tabBar');
+            const categories = Object.keys(toolsByCategory).sort();
+
+            let html = '<button class="tab-btn' + (currentCategory === null ? ' active' : '') + '" onclick="selectCategory(null)">All(' + tools.length + ')</button>';
+
+            categories.forEach(cat => {
+                const count = toolsByCategory[cat].length;
+                const label = CATEGORY_LABELS[cat] || cat;
+                html += '<button class="tab-btn' + (currentCategory === cat ? ' active' : '') + '" onclick="selectCategory(\'' + cat + '\')">' + label + '<span class="count">(' + count + ')</span></button>';
+            });
+
+            tabBar.innerHTML = html;
+        }
+
+        function selectCategory(cat) {
+            currentCategory = cat;
+            selectedTool = null;
+            renderTabs();
+            renderToolsList();
+            renderDetailPanel();
+        }
+
+        function renderToolsList() {
+            const list = document.getElementById('toolsList');
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            let filtered = tools;
+
+            if (currentCategory) {
+                filtered = filtered.filter(t => t.category === currentCategory);
+            }
+
+            if (searchTerm) {
+                filtered = filtered.filter(t =>
+                    t.name.toLowerCase().includes(searchTerm) ||
+                    (t.description || '').toLowerCase().includes(searchTerm)
+                );
+            }
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="empty-state">No tools found</div>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(t =>
+                '<div class="tool-item' + (selectedTool?.name === t.name ? ' selected' : '') + '" onclick="selectTool(\'' + t.name + '\')">' +
+                    '<div class="tool-name">' + t.name + '</div>' +
+                    '<div class="tool-desc">' + (t.description || '') + '</div>' +
+                '</div>'
+            ).join('');
+        }
+
+        function filterTools() {
+            renderToolsList();
+        }
+
+        function selectTool(name) {
+            selectedTool = tools.find(t => t.name === name);
+            renderToolsList();
+            renderDetailPanel();
+        }
+
+        function renderDetailPanel() {
+            const panel = document.getElementById('detailPanel');
+
+            if (!selectedTool) {
+                panel.innerHTML = '<div class="empty-state">Select a tool from the left panel</div>';
+                return;
+            }
+
+            const catLabel = CATEGORY_LABELS[selectedTool.category] || selectedTool.category;
+
+            let html =
+                '<div class="detail-header">' +
+                    '<div class="detail-name">' + selectedTool.name + '</div>' +
+                    '<div class="detail-category">Category: ' + catLabel + '</div>' +
+                    (selectedTool.description ? '<div class="detail-desc">' + selectedTool.description + '</div>' : '') +
+                '</div>' +
+                '<div class="editor-toggle" style="margin-top:15px;">' +
+                    '<button class="toggle-btn' + (!isJsonMode ? ' active' : '') + '" onclick="setEditorMode(false)">Form</button>' +
+                    '<button class="toggle-btn' + (isJsonMode ? ' active' : '') + '" onclick="setEditorMode(true)">JSON</button>' +
+                '</div>' +
+                '<div id="editorContainer" style="margin-top:10px;"></div>' +
+                '<div class="action-bar">' +
+                    '<button class="primary" onclick="executeTool()" id="executeBtn">Execute</button>' +
+                    '<button class="secondary" onclick="fillDefaults()">Fill Defaults</button>' +
+                    '<button class="secondary" onclick="clearParams()">Clear</button>' +
+                    '<button class="secondary" onclick="copyAsCurl()">Copy cURL</button>' +
+                '</div>' +
+                '<div class="result-panel">' +
+                    '<div class="result-header">' +
+                        '<span class="result-title">Result</span>' +
+                        '<span class="result-meta" id="resultMeta"></span>' +
+                        '<button class="secondary" id="copyResultBtn" style="padding:4px 10px;font-size:11px;display:none;" onclick="copyResult()">Copy</button>' +
+                    '</div>' +
+                    '<div class="result-container" id="resultContainer">' +
+                        '<span class="result-empty">Click Execute to run this tool</span>' +
+                    '</div>' +
+                '</div>';
+
+            panel.innerHTML = html;
+            renderEditor();
+        }
+
+        function renderEditor() {
+            const container = document.getElementById('editorContainer');
+            if (!container) return;
+
+            if (isJsonMode) {
+                const memory = paramMemory[selectedTool.name] || {};
+                container.innerHTML = '<textarea class="json-textarea" id="jsonEditor" placeholder="Enter JSON arguments...">' + JSON.stringify(memory, null, 2) + '</textarea>';
+            } else {
+                renderFormEditor(container);
+            }
+        }
+
+        function renderFormEditor(container) {
+            const params = selectedTool.inputSchema?.properties || {};
+            const required = selectedTool.inputSchema?.required || [];
+            const memory = paramMemory[selectedTool.name] || {};
+            const paramEntries = Object.entries(params);
+
+            if (paramEntries.length === 0) {
+                container.innerHTML = '<div style="color:#7d8590;padding:10px;background:#21262d;border-radius:4px;">This tool has no parameters</div>';
+                return;
+            }
+
+            let html = '';
+            paramEntries.forEach(([name, info]) => {
+                const isReq = required.includes(name);
+                const type = info.type || 'string';
+                const desc = info.description || '';
+                const defVal = info.default;
+                const enumVals = info.enum || [];
+                const example = info.example || '';
+                const memVal = memory[name] !== undefined ? memory[name] : (defVal !== undefined ? defVal : '');
+
+                // 安全构建 placeholder：example 或 default 都没有时留空，不产生 'undefined' 字符串
+                let placeholderText = '';
+                if (example) {
+                    placeholderText = String(example);
+                } else if (defVal !== undefined && defVal !== null && defVal !== '') {
+                    placeholderText = String(defVal);
+                } else if (enumVals.length > 0) {
+                    placeholderText = enumVals[0];
+                }
+
+                html +=
+                    '<div class="param-group">' +
+                        '<div class="param-label">' +
+                            '<span class="param-label-text">' + name + '</span>' +
+                            '<span class="param-label-type">' + type + '</span>' +
+                            '<span class="' + (isReq ? 'required' : 'optional') + '">' + (isReq ? 'REQUIRED' : 'optional') + '</span>' +
+                        '</div>' +
+                        '<input type="text" class="param-input" id="param_' + name + '" data-name="' + name + '" data-type="' + type + '"' +
+                               ' placeholder="' + placeholderText.replace(/"/g, '&quot;') + '" value="' + String(memVal === '' ? '' : memVal).replace(/"/g, '&quot;') + '">' +
+                        (desc ? '<div class="param-desc">' + desc + '</div>' : '') +
+                        (enumVals.length ? '<div class="param-enum">' + enumVals.map(v => '<span class="enum-chip" onclick="setParam(\'' + name + '\',\'' + v + '\')">' + v + '</span>').join('') + '</div>' : '') +
+                    '</div>';
+            });
+
+            container.innerHTML = html;
+        }
+
+        function setEditorMode(jsonMode) {
+            isJsonMode = jsonMode;
+            document.querySelectorAll('.toggle-btn').forEach((btn, i) => btn.classList.toggle('active', i === (jsonMode ? 1 : 0)));
+            renderEditor();
+        }
+
+        function setParam(name, value) {
+            const input = document.getElementById('param_' + name);
+            if (input) input.value = value;
+        }
+
+        function getParams() {
+            if (isJsonMode) {
+                const editor = document.getElementById('jsonEditor');
+                try {
+                    return editor?.value?.trim() ? JSON.parse(editor.value) : {};
+                } catch (e) {
+                    throw new Error('Invalid JSON: ' + e.message);
+                }
+            } else {
+                const params = {};
+                document.querySelectorAll('.param-input').forEach(input => {
+                    const name = input.dataset.name;
+                    const type = input.dataset.type;
+                    let value = input.value.trim();
+
+                    // 空输入直接跳过（不使用 placeholder 作为值，避免 'undefined' 等垃圾值）
+                    if (!value) return;
+
+                    if (type === 'number' || type === 'integer') {
+                        value = parseFloat(value);
+                        if (isNaN(value)) return;
+                    } else if (type === 'boolean') {
+                        value = value.toLowerCase() === 'true';
+                    } else if (type === 'array') {
+                        try {
+                            value = JSON.parse(value);
+                        } catch {
+                            value = value.split(',').map(s => {
+                                const trimmed = s.trim();
+                                const num = parseFloat(trimmed);
+                                return isNaN(num) ? trimmed : num;
+                            });
+                        }
+                        if (!Array.isArray(value) || value.length === 0) return;
+                    } else if (type === 'object') {
+                        try { value = JSON.parse(value); } catch { return; }
+                    }
+                    params[name] = value;
+                });
+                return params;
+            }
+        }
+
+        function clearParams() {
+            if (isJsonMode) {
+                document.getElementById('jsonEditor').value = '{}';
+            } else {
+                document.querySelectorAll('.param-input').forEach(i => i.value = '');
+            }
+            delete paramMemory[selectedTool.name];
+            saveToStorage();
+        }
+
+        // 从 schema 的 default/example/enum 自动填充表单
+        function fillDefaults() {
+            if (!selectedTool) return;
+            const params = selectedTool.inputSchema?.properties || {};
+            if (isJsonMode) {
+                const editor = document.getElementById('jsonEditor');
+                if (editor) {
+                    const defaults = {};
+                    for (const [name, info] of Object.entries(params)) {
+                        const type = info.type || 'string';
+                        if (info.default !== undefined && info.default !== null) {
+                            defaults[name] = info.default;
+                        } else if (info.example) {
+                            defaults[name] = info.example;
+                        } else if (info.enum && info.enum.length > 0) {
+                            defaults[name] = info.enum[0];
+                        } else if (type === 'boolean') {
+                            defaults[name] = false;
+                        } else if (type === 'number' || type === 'integer') {
+                            defaults[name] = info.minimum || 0;
+                        } else if (type === 'string') {
+                            defaults[name] = '';
+                        } else if (type === 'object') {
+                            defaults[name] = {};
+                        } else if (type === 'array') {
+                            defaults[name] = [];
+                        }
+                    }
+                    editor.value = JSON.stringify(defaults, null, 2);
+                }
+            } else {
+                for (const [name, info] of Object.entries(params)) {
+                    const input = document.getElementById('param_' + name);
+                    if (!input) continue;
+                    const type = info.type || 'string';
+                    if (info.default !== undefined && info.default !== null && info.default !== '') {
+                        input.value = String(info.default);
+                    } else if (info.example) {
+                        input.value = String(info.example);
+                    } else if (info.enum && info.enum.length > 0) {
+                        input.value = info.enum[0];
+                    } else {
+                        input.value = '';
+                    }
+                }
+            }
+        }
+
+        // 执行工具：POST /skill-tester/api/execute，body: { tool, arguments }
+        async function executeTool() {
+            if (!selectedTool) return;
+
+            const args = getParams();
+            paramMemory[selectedTool.name] = args;
+            saveToStorage();
+
+            const resultContainer = document.getElementById('resultContainer');
+            const resultMeta = document.getElementById('resultMeta');
+            const executeBtn = document.getElementById('executeBtn');
+
+            resultContainer.className = 'result-container';
+            resultContainer.innerHTML = '<span class="result-loading">Executing...</span>';
+            resultMeta.textContent = '';
+            executeBtn.disabled = true;
+
+            const startTime = Date.now();
+            let success = false;
+            let result = null;
+            let requestData = { tool: selectedTool.name, arguments: args };
+            let responseData = null;
+
+            try {
+                const res = await fetch('/skill-tester/api/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tool: selectedTool.name, arguments: args })
+                });
+
+                responseData = await res.json();
+                success = res.ok;
+                result = responseData;
+                lastResultData = responseData;
+
+                const elapsed = Date.now() - startTime;
+                resultMeta.textContent = 'Status: ' + res.status + ' | Time: ' + elapsed + 'ms';
+
+                const copyBtn = document.getElementById('copyResultBtn');
+                if (copyBtn) copyBtn.style.display = '';
+
+                if (success) {
+                    resultContainer.className = 'result-container success';
+                    resultContainer.innerHTML = formatJson(responseData);
+                } else {
+                    resultContainer.className = 'result-container error';
+                    resultContainer.innerHTML = '<span style="color:#da3633;">Error: ' + (responseData.error || JSON.stringify(responseData)) + '</span>';
+                }
+            } catch (e) {
+                success = false;
+                result = { error: e.message };
+                lastResultData = { error: e.message };
+                const copyBtn = document.getElementById('copyResultBtn');
+                if (copyBtn) copyBtn.style.display = '';
+                resultContainer.className = 'result-container error';
+                resultContainer.innerHTML = '<span style="color:#da3633;">Error: ' + e.message + '</span>';
+            } finally {
+                executeBtn.disabled = false;
+            }
+
+            addToHistory(selectedTool.name, args, success, result, Date.now() - startTime, requestData, responseData);
+        }
+
+        // JSON 语法高亮
+        function formatJson(obj, indent) {
+            indent = indent || 0;
+            if (obj === null) return '<span class="json-null">null</span>';
+            if (typeof obj === 'string') return '<span class="json-string">"' + escapeHtml(obj) + '"</span>';
+            if (typeof obj === 'number') return '<span class="json-number">' + obj + '</span>';
+            if (typeof obj === 'boolean') return '<span class="json-boolean">' + obj + '</span>';
+
+            if (Array.isArray(obj)) {
+                if (obj.length === 0) return '[]';
+                const items = obj.map(function(item) { return '  '.repeat(indent + 1) + formatJson(item, indent + 1); });
+                return '[\n' + items.join(',\n') + '\n' + '  '.repeat(indent) + ']';
+            }
+
+            if (typeof obj === 'object') {
+                const keys = Object.keys(obj);
+                if (keys.length === 0) return '{}';
+                const items = keys.map(function(k) { return '  '.repeat(indent + 1) + '<span class="json-key">"' + k + '"</span>: ' + formatJson(obj[k], indent + 1); });
+                return '{\n' + items.join(',\n') + '\n' + '  '.repeat(indent) + '}';
+            }
+
+            return String(obj);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function copyAsCurl() {
+            if (!selectedTool) return;
+            const args = getParams();
+            const port = window.location.port || '3000';
+            const curl = 'curl -X POST http://127.0.0.1:' + port + '/skill-tester/api/execute \\\n' +
+                '  -H "Content-Type: application/json" \\\n' +
+                '  -d \'{"tool": "' + selectedTool.name + '", "arguments": ' + JSON.stringify(args) + '}\'';
+            navigator.clipboard.writeText(curl).then(function() {
+                alert('cURL command copied!');
+            });
+        }
+
+        // 复制 Result 区域的 JSON 到剪贴板
+        function copyResult() {
+            if (lastResultData === null) return;
+            const text = JSON.stringify(lastResultData, null, 2);
+            navigator.clipboard.writeText(text).then(function() {
+                const btn = document.getElementById('copyResultBtn');
+                if (btn) {
+                    var orig = btn.textContent;
+                    btn.textContent = 'Copied';
+                    setTimeout(function() { btn.textContent = orig; }, 1500);
+                }
+            }).catch(function() {
+                alert('Copy failed');
+            });
+        }
+
+        // 历史记录
+        function addToHistory(name, args, success, result, time, reqData, resData) {
+            executionHistory.unshift({
+                name: name, arguments: args, success: success, result: result, time: time,
+                requestData: reqData, responseData: resData,
+                timestamp: new Date()
+            });
+            if (executionHistory.length > 20) executionHistory.pop();
+            renderHistory();
+            saveToStorage();
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('historyList');
+            if (executionHistory.length === 0) {
+                list.innerHTML = '<div class="empty-state" style="padding:10px;">No history</div>';
+                return;
+            }
+
+            list.innerHTML = executionHistory.map(function(h, i) {
+                return '<div class="history-item" onclick="showHistoryDetail(' + i + ')">' +
+                    '<span class="name">' + h.name + '</span>' +
+                    '<span class="time">' + formatTime(h.timestamp) + '</span>' +
+                    '<div class="status ' + (h.success ? 'success' : 'error') + '">' + (h.success ? '[OK]' : '[FAIL]') + ' ' + h.time + 'ms</div>' +
+                '</div>';
+            }).join('');
+        }
+
+        function showHistoryDetail(index) {
+            const h = executionHistory[index];
+            if (!h) return;
+
+            document.getElementById('modalTitle').textContent = h.name + ' - Request Detail';
+            document.getElementById('modalRequest').textContent = JSON.stringify(h.requestData, null, 2);
+            document.getElementById('modalResponse').textContent = JSON.stringify(h.responseData || h.result, null, 2);
+            document.getElementById('detailModal').classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('detailModal').classList.remove('show');
+        }
+
+        function clearHistory() {
+            executionHistory = [];
+            renderHistory();
+            saveToStorage();
+        }
+
+        // localStorage 持久化
+        function saveToStorage() {
+            try {
+                localStorage.setItem('cocosToolTester_history', JSON.stringify(executionHistory));
+                localStorage.setItem('cocosToolTester_memory', JSON.stringify(paramMemory));
+            } catch (e) {}
+        }
+
+        function loadFromStorage() {
+            try {
+                const h = localStorage.getItem('cocosToolTester_history');
+                if (h) executionHistory = JSON.parse(h);
+                const m = localStorage.getItem('cocosToolTester_memory');
+                if (m) paramMemory = JSON.parse(m);
+            } catch (e) {}
+        }
+
+        function formatTime(date) {
+            return new Date(date).toLocaleTimeString();
+        }
+
+        document.getElementById('detailModal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+    </script>
+</body>
+</html>

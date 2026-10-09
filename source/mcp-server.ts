@@ -59,6 +59,8 @@ export class MCPServer {
     private enabledTools: any[] = []; // 存储启用的工具列表
     // Cocos 编辑器预览服务地址（localhost 形式，启动时查询并缓存）
     private previewUrl: string = '';
+    // 测试页面 HTML 缓存（首次读取后缓存，避免每次请求都读磁盘）
+    private cachedTesterHtml: string | null = null;
     // 就绪状态（/health 上报用；extensionLoaded 构造即置位，MCPServer 只在扩展 load 里构造）
     private readyState: McpReadyState = {
         extensionLoaded: true,
@@ -274,6 +276,18 @@ export class MCPServer {
             } else if (pathname === '/api/tools' && req.method === 'GET') {
                 res.writeHead(200);
                 res.end(JSON.stringify({ tools: this.getSimplifiedToolsList() }));
+            } else if (pathname === '/skill-tester' && req.method === 'GET') {
+                // 返回测试页面 HTML
+                const html = this.getTesterHtml();
+                res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                res.writeHead(200);
+                res.end(html);
+            } else if (pathname === '/skill-tester/api/tools' && req.method === 'GET') {
+                // 返回按分类分组的工具列表（测试页面前端用）
+                res.writeHead(200);
+                res.end(JSON.stringify({ categories: this.getCategorizedToolsList() }));
+            } else if (pathname === '/skill-tester/api/execute' && req.method === 'POST') {
+                await this.handleTesterExecute(req, res);
             } else {
                 res.writeHead(404);
                 res.end(JSON.stringify({ error: 'Not found' }));
@@ -549,6 +563,92 @@ export class MCPServer {
             }
         }
         return sample;
+    }
+
+    // ==================== 测试页面 ====================
+
+    /**
+     * 读取测试页面 HTML（带缓存）
+     * 编译后 __dirname 为 dist/，HTML 在 ../static/skill-tester.html
+     */
+    private getTesterHtml(): string {
+        if (this.cachedTesterHtml !== null) {
+            return this.cachedTesterHtml;
+        }
+        try {
+            const htmlPath = path.join(__dirname, '..', 'static', 'skill-tester.html');
+            this.cachedTesterHtml = fs.readFileSync(htmlPath, 'utf8');
+            return this.cachedTesterHtml;
+        } catch (e) {
+            console.error('[MCPServer] Failed to read skill-tester.html:', e);
+            return '<html><body><h1>Failed to load skill-tester.html</h1><p>' + (e as Error).message + '</p></body></html>';
+        }
+    }
+
+    /**
+     * 返回按分类分组的工具列表（测试页面前端用，格式：{ categories: { scene: [...], node: [...] } }）
+     * 工具名格式为 category_toolName，按第一个下划线前的部分分组
+     */
+    private getCategorizedToolsList(): Record<string, any[]> {
+        const categories: Record<string, any[]> = {};
+        for (const tool of this.toolsList) {
+            const parts = tool.name.split('_');
+            const category = parts[0];
+            if (!categories[category]) {
+                categories[category] = [];
+            }
+            categories[category].push({
+                name: tool.name,
+                description: tool.description,
+                inputSchema: tool.inputSchema,
+            });
+        }
+        return categories;
+    }
+
+    /**
+     * 测试页面统一执行入口：POST /skill-tester/api/execute
+     * body: { tool: "scene_management", arguments: {...} }
+     */
+    private async handleTesterExecute(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        let body = '';
+        req.on('data', (chunk) => {
+            body += chunk.toString();
+        });
+        req.on('end', async () => {
+            try {
+                let parsed: any;
+                try {
+                    parsed = JSON.parse(body);
+                } catch (e: any) {
+                    res.writeHead(400);
+                    res.end(JSON.stringify({ error: 'Invalid JSON: ' + e.message }));
+                    return;
+                }
+                const toolName = parsed.tool;
+                const args = parsed.arguments || parsed.args || {};
+                if (!toolName) {
+                    res.writeHead(400);
+                    res.end(JSON.stringify({ error: 'Missing "tool" field in request body' }));
+                    return;
+                }
+                const result = await this.executeToolCall(toolName, args);
+                res.writeHead(200);
+                res.end(JSON.stringify({
+                    success: true,
+                    tool: toolName,
+                    result: result,
+                }));
+            } catch (error: any) {
+                console.error('[MCPServer] Tester execute error:', error);
+                res.writeHead(500);
+                res.end(JSON.stringify({
+                    success: false,
+                    error: error.message,
+                    tool: 'unknown',
+                }));
+            }
+        });
     }
 
     public updateSettings(settings: MCPServerSettings) {

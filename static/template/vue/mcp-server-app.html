@@ -130,6 +130,9 @@
                     <a slot="content" class="preview-link" href="javascript:void(0)" @click.prevent="openHttpUrl" :title="httpUrl ? t('click_to_open') : ''">{{ httpUrl }}</a>
                 </ui-prop>
             </div>
+            <div class="skill-gen-actions" style="margin-top:10px;">
+                <ui-button @click="openTester" class="primary">{{ t('open_tester') }}</ui-button>
+            </div>
         </section>
 
         <footer>
